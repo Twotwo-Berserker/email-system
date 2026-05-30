@@ -1,0 +1,36 @@
+# ============================================================
+# 邮件系统 — .dockerignore
+# 加速 Docker 构建上下文传输，排除不需要的文件
+# ============================================================
+
+# 环境配置（敏感信息）
+.env
+
+# 前端
+frontend/node_modules/
+frontend/dist/
+
+# 后端
+backend/target/
+backend/uploads/
+
+# 本地数据
+data/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Git
+.git/
+.gitignore
+.github/
+
+# 文档
+*.md
+doc/
+
+# 操作系统
+.DS_Store
+Thumbs.db

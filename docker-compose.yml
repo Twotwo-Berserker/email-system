@@ -1,0 +1,247 @@
+# ============================================================
+# 邮件系统 — Docker Compose 编排文件
+# 服务组件: Nginx + Frontend + Backend + MySQL + Redis + MinIO
+# 启动方式: docker-compose up -d
+# 前置条件: 复制 .env.example 为 .env 并修改配置
+# ============================================================
+
+# -------------------- 网络定义 --------------------
+networks:
+  mail-network:
+    driver: bridge
+    name: mail-network
+
+# -------------------- 数据卷定义 --------------------
+volumes:
+  mysql-data:        # MySQL 数据库文件
+  redis-data:        # Redis 持久化数据 (RDB + AOF)
+  minio-data:        # MinIO 对象存储数据
+  frontend-dist:     # 前端构建产物（由 frontend 服务构建，Nginx 挂载使用）
+
+# -------------------- 服务定义 --------------------
+services:
+
+  # ==========================================================
+  # 1. Nginx — 反向代理 + 前端静态资源服务
+  # 静态文件来自 frontend-dist 命名卷（由 frontend 服务构建）
+  # ==========================================================
+  nginx:
+    build:
+      context: ./deploy/nginx
+      dockerfile: Dockerfile
+    image: mail-system-nginx:1.0.0
+    container_name: mail-nginx
+    ports:
+      - "${NGINX_PORT:-80}:80"
+    volumes:
+      # 挂载前端构建产物（由 frontend 服务生成）
+      - frontend-dist:/usr/share/nginx/html:ro
+    depends_on:
+      frontend:
+        condition: service_completed_successfully
+      backend:
+        condition: service_healthy
+    networks:
+      - mail-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ==========================================================
+  # 2. Frontend — Vue3 前端构建服务
+  # 负责在 Docker 内安装依赖、打包、生成 dist
+  # 构建完成后将产物写入 frontend-dist 命名卷，随后退出
+  # ==========================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: mail-system-frontend:1.0.0
+    container_name: mail-frontend
+    volumes:
+      # 将构建产物输出到命名卷，供 Nginx 使用
+      - frontend-dist:/output
+    # 不需要 mail-network（仅本地构建，不需要与其他服务通信）
+    # 构建完成后自动退出，不需要重启策略
+    restart: "no"
+
+  # ==========================================================
+  # 3. Backend — SpringBoot 邮件系统后端
+  # ==========================================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: mail-system-backend:1.0.0
+    container_name: mail-backend
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    environment:
+      # Spring 激活的 profile（docker = 使用 Docker 环境配置）
+      - SPRING_PROFILES_ACTIVE=docker
+      # MySQL 连接信息
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-mail_system}
+      - MYSQL_USER=${MYSQL_USER:-mailuser}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-mailpass123}
+      # Redis 连接信息
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_secure_password_2026}
+      # MinIO 连接信息
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin123}
+      - MINIO_BUCKET_NAME=mail-attachments
+      # JWT 配置
+      - JWT_SECRET=${JWT_SECRET:-mail-system-2026-secret-key-for-jwt-token-generation}
+      - JWT_EXPIRATION=${JWT_EXPIRATION:-86400000}
+      # 文件上传限制
+      - FILE_UPLOAD_MAX_SIZE=${FILE_UPLOAD_MAX_SIZE:-52428800}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - mail-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ==========================================================
+  # 4. MySQL — 关系型数据库
+  # ==========================================================
+  mysql:
+    image: mysql:8.0
+    container_name: mail-mysql
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-mail_system}
+      MYSQL_USER: ${MYSQL_USER:-mailuser}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-mailpass123}
+      # 设置时区
+      TZ: Asia/Shanghai
+    volumes:
+      # 数据库数据持久化
+      - mysql-data:/var/lib/mysql
+      # 建库初始化脚本（容器首次启动时自动执行）
+      - ./deploy/mysql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
+      # 连接数限制
+      - --max-connections=200
+      # 慢查询日志
+      - --slow-query-log=1
+      - --slow-query-log-file=/var/lib/mysql/slow-query.log
+      - --long-query-time=2
+    networks:
+      - mail-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root123}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ==========================================================
+  # 5. Redis — 缓存 + 验证码 + Token 黑名单
+  # ==========================================================
+  redis:
+    build:
+      context: ./deploy/redis
+      dockerfile: Dockerfile
+    image: mail-system-redis:7
+    container_name: mail-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    environment:
+      # Redis 密码（在 redis.conf 中通过启动参数设置）
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secure_password_2026}
+    volumes:
+      # Redis 持久化数据 (RDB + AOF 文件)
+      - redis-data:/data
+    # 通过命令行注入密码
+    command: >
+      redis-server /usr/local/etc/redis/redis.conf
+      --requirepass ${REDIS_PASSWORD:-redis_secure_password_2026}
+      --maxmemory ${REDIS_MAXMEMORY:-256mb}
+    networks:
+      - mail-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_secure_password_2026}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================================
+  # 6. MinIO — 对象存储（大附件）
+  # ==========================================================
+  minio:
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    container_name: mail-minio
+    ports:
+      # 9000: MinIO API 端口（SDK 上传/下载）
+      - "${MINIO_API_PORT:-9000}:9000"
+      # 9001: MinIO Web 控制台端口
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+    volumes:
+      # MinIO 对象数据持久化
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - mail-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ==========================================================
+  # 7. MinIO 初始化服务（仅运行一次，创建存储桶）
+  # ==========================================================
+  minio-init:
+    image: minio/mc:latest
+    container_name: mail-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: []
+    command:
+      - /bin/sh
+      - -c
+      - |
+        # 等待 MinIO 服务完全就绪
+        sleep 5
+        # 执行初始化脚本
+        /init.sh
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+    volumes:
+      - ./deploy/minio/init.sh:/init.sh:ro
+    networks:
+      - mail-network
+    # 此服务仅初始化一次，不需要重启策略
+    restart: "no"
