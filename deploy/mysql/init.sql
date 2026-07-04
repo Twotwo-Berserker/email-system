@@ -76,9 +76,12 @@ CREATE TABLE `mail_status` (
   `is_deleted`  TINYINT  NOT NULL DEFAULT 0 COMMENT '是否已删除: 0=否, 1=是',
   `sync_status` TINYINT  NOT NULL DEFAULT 0 COMMENT '同步状态: 0=未同步, 1=已同步',
   `read_time`   DATETIME DEFAULT NULL COMMENT '阅读时间',
+  `deleted_time` DATETIME DEFAULT NULL COMMENT '删除时间',
+  `updated_time` DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '状态更新时间',
   PRIMARY KEY (`id`),
   KEY `idx_user_mail` (`user_id`, `mail_id`),
-  KEY `idx_mail_id` (`mail_id`)
+  KEY `idx_mail_id` (`mail_id`),
+  KEY `idx_updated_time` (`updated_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='邮件状态表';
 
 -- -----------------------------------------------------------
@@ -104,3 +107,21 @@ INSERT INTO `plugin_config` (`plugin_name`, `enabled`, `description`) VALUES
 ('linkDetection',    1, '恶意链接/伪造发件人检测插件'),
 ('summaryGenerator', 1, '智能摘要生成插件 - 异步任务'),
 ('categoryClassifier',1, '智能分类插件 - 异步任务');
+
+-- -----------------------------------------------------------
+-- 6. LLM大模型配置表 (llm_config)
+-- -----------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `llm_config` (
+  `id`           BIGINT       NOT NULL AUTO_INCREMENT COMMENT '配置ID',
+  `api_endpoint` VARCHAR(512) NOT NULL DEFAULT 'https://api.openai.com/v1' COMMENT 'API端点',
+  `api_key`      VARCHAR(512) DEFAULT NULL COMMENT 'API密钥',
+  `model_name`   VARCHAR(128) NOT NULL DEFAULT 'gpt-3.5-turbo' COMMENT '模型名称',
+  `enabled`      TINYINT      NOT NULL DEFAULT 0 COMMENT '是否启用: 0=禁用, 1=启用',
+  `create_time`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time`  DATETIME     DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='LLM大模型配置表';
+
+-- 插入默认LLM配置（默认禁用）
+INSERT INTO `llm_config` (`api_endpoint`, `api_key`, `model_name`, `enabled`) VALUES
+('https://api.openai.com/v1', '', 'gpt-3.5-turbo', 0);

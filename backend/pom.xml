@@ -90,6 +90,12 @@
             <artifactId>commons-pool2</artifactId>
         </dependency>
 
+        <!-- Spring Boot WebSocket (实时推送通知) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+
         <!-- MinIO Client (对象存储，大附件上传/下载) -->
         <dependency>
             <groupId>io.minio</groupId>

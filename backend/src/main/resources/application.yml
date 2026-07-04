@@ -70,19 +70,6 @@ minio:
   # 存储桶名称（由 deploy/minio/init.sh 创建）
   bucket-name: ${MINIO_BUCKET_NAME:mail-attachments}
 
-# 智能插件配置
-plugin:
-  spam-filter:
-    enabled: true
-  priority-sort:
-    enabled: true
-  link-detection:
-    enabled: true
-  summary-generator:
-    enabled: true
-  category-classifier:
-    enabled: true
-
 ---
 # ============================================================
 # Docker 环境 Profile

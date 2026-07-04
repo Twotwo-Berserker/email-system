@@ -33,6 +33,16 @@
       </template>
       <el-empty v-else description="没有已发送的邮件" />
     </div>
+
+    <div class="pagination-wrapper" v-if="total > pageSize">
+      <el-pagination
+        v-model:current-page="currentPage"
+        :page-size="pageSize"
+        :total="total"
+        layout="total, prev, pager, next"
+        @current-change="refreshMails"
+      />
+    </div>
   </div>
 </template>
 
@@ -43,14 +53,19 @@ import { formatTime } from '@/utils'
 
 const mails = ref([])
 const loading = ref(false)
+const currentPage = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
 
 onMounted(() => refreshMails())
 
 async function refreshMails() {
   loading.value = true
   try {
-    const res = await listMails(2)
-    mails.value = res.data || []
+    const res = await listMails(2, currentPage.value, pageSize.value)
+    const data = res.data
+    mails.value = data.records || data.data || []
+    total.value = data.total || 0
   } finally {
     loading.value = false
   }
@@ -109,5 +124,11 @@ async function refreshMails() {
 .mail-time {
   color: #909399;
   font-size: 13px;
+}
+
+.pagination-wrapper {
+  display: flex;
+  justify-content: center;
+  padding: 16px 0;
 }
 </style>

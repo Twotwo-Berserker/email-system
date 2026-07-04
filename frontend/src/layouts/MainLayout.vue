@@ -76,6 +76,7 @@ import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useMailStore } from '@/stores/mail'
+import { useWebSocket } from '@/composables/useWebSocket'
 import { UserFilled } from '@element-plus/icons-vue'
 
 const route = useRoute()
@@ -85,12 +86,11 @@ const mailStore = useMailStore()
 
 const activeMenu = computed(() => route.path)
 
+const { connect: connectWebSocket } = useWebSocket()
+
 onMounted(() => {
-  mailStore.refreshUnread()
-  // 每 30 秒轮询一次未读数量
-  setInterval(() => {
-    mailStore.refreshUnread()
-  }, 30000)
+  // 使用 WebSocket 实时推送（自动降级为轮询）
+  connectWebSocket()
 })
 
 function handleLogout() {

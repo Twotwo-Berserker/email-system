@@ -44,6 +44,16 @@
         <el-button type="primary" @click="$router.push('/compose')">去写信</el-button>
       </el-empty>
     </div>
+
+    <div class="pagination-wrapper" v-if="total > pageSize">
+      <el-pagination
+        v-model:current-page="currentPage"
+        :page-size="pageSize"
+        :total="total"
+        layout="total, prev, pager, next"
+        @current-change="refreshMails"
+      />
+    </div>
   </div>
 </template>
 
@@ -59,14 +69,19 @@ const router = useRouter()
 const mails = ref([])
 const loading = ref(false)
 const deletingId = ref(null)
+const currentPage = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
 
 onMounted(() => refreshMails())
 
 async function refreshMails() {
   loading.value = true
   try {
-    const res = await listMails(4)
-    mails.value = res.data || []
+    const res = await listMails(4, currentPage.value, pageSize.value)
+    const data = res.data
+    mails.value = data.records || data.data || []
+    total.value = data.total || 0
   } finally {
     loading.value = false
   }
@@ -93,7 +108,6 @@ async function handleDelete(id) {
     await refreshMails()
   } catch (e) {
     if (e === 'cancel' || e === 'close') return
-    // error handled by interceptor
   } finally {
     deletingId.value = null
   }
@@ -170,5 +184,11 @@ async function handleDelete(id) {
 
 .mail-item:hover .mail-actions {
   opacity: 1;
+}
+
+.pagination-wrapper {
+  display: flex;
+  justify-content: center;
+  padding: 16px 0;
 }
 </style>

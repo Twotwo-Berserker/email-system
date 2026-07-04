@@ -1,6 +1,10 @@
 package com.mailsystem.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.mailsystem.dto.PageResult;
+import com.mailsystem.dto.SyncMailEvent;
 import com.mailsystem.entity.Attachment;
 import com.mailsystem.entity.Mail;
 import com.mailsystem.entity.MailStatus;
@@ -10,14 +14,20 @@ import com.mailsystem.mapper.MailMapper;
 import com.mailsystem.mapper.MailStatusMapper;
 import com.mailsystem.mapper.UserMapper;
 import com.mailsystem.plugin.PluginInterface;
+import com.mailsystem.plugin.dynamic.DynamicPluginRegistry;
 import com.mailsystem.service.MailService;
+import com.mailsystem.websocket.MailNotificationService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.Arrays;
-import java.util.List;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -38,24 +48,38 @@ public class MailServiceImpl implements MailService {
     @Autowired
     private UserMapper userMapper;
 
-    /** 注入所有插件实现 */
+    /** 注入所有编译时插件实现 */
     @Autowired(required = false)
     private List<PluginInterface> plugins;
+
+    /** 动态插件注册中心 */
+    @Autowired
+    private DynamicPluginRegistry dynamicPluginRegistry;
+
+    /** WebSocket 实时推送 */
+    @Autowired(required = false)
+    private MailNotificationService notificationService;
+
+    /** Redis 缓存 */
+    @Autowired
+    private RedisTemplate<String, Object> redisTemplate;
+
+    @Autowired
+    private StringRedisTemplate stringRedisTemplate;
+
+    private static final DateTimeFormatter DT_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     @Override
     @Transactional
     public Mail sendMail(Long senderId, String receiverEmails, String ccEmails, String subject, String body, List<Long> attachmentIds) {
-        // 获取发件人信息
         User sender = userMapper.selectById(senderId);
         if (sender == null) {
             throw new RuntimeException("发件人不存在");
         }
 
-        // 将邮箱地址转换为用户ID（前端传来的是邮箱，数据库存的是ID）
         String receiverIds = resolveEmailsToIdString(receiverEmails);
         String ccIds = resolveEmailsToIdString(ccEmails);
 
-        // 保存邮件
         Mail mail = new Mail();
         mail.setSenderId(senderId);
         mail.setSenderEmail(sender.getEmail());
@@ -64,24 +88,18 @@ public class MailServiceImpl implements MailService {
         mail.setSubject(subject);
         mail.setBody(body);
         mail.setSendTime(LocalDateTime.now());
-        mail.setStatus(1); // 正常发送
+        mail.setStatus(1);
         mailMapper.insert(mail);
 
         // 绑定附件
-        if (attachmentIds != null && !attachmentIds.isEmpty()) {
-            for (Long attId : attachmentIds) {
-                Attachment att = attachmentMapper.selectById(attId);
-                if (att != null) {
-                    att.setMailId(mail.getId());
-                    attachmentMapper.updateById(att);
-                }
-            }
-        }
+        bindAttachments(mail.getId(), attachmentIds);
 
         // 为每个收件人创建邮件状态记录
         List<Long> receiverIdList = parseIdList(receiverIds);
         for (Long receiverId : receiverIdList) {
             createMailStatus(mail.getId(), receiverId);
+            // WebSocket 实时推送新邮件通知
+            pushNewMailNotification(receiverId, mail);
         }
 
         // 为每个抄送人创建邮件状态记录
@@ -89,11 +107,19 @@ public class MailServiceImpl implements MailService {
             List<Long> ccIdList = parseIdList(ccIds);
             for (Long ccId : ccIdList) {
                 createMailStatus(mail.getId(), ccId);
+                pushNewMailNotification(ccId, mail);
             }
         }
 
         // 执行智能插件处理
         executePlugins(mail);
+
+        // 驱逐相关用户的 Redis 缓存
+        evictUserCache(senderId);
+        for (Long rid : receiverIdList) { evictUserCache(rid); }
+        if (ccIds != null && !ccIds.isEmpty()) {
+            for (Long cid : parseIdList(ccIds)) { evictUserCache(cid); }
+        }
 
         return mail;
     }
@@ -108,31 +134,49 @@ public class MailServiceImpl implements MailService {
     }
 
     @Override
-    public List<Mail> listMails(Long userId, Integer type) {
-        // type: 1=收件箱, 2=已发送, 3=垃圾箱, 4=草稿
+    public PageResult<Mail> listMails(Long userId, Integer type, int page, int pageSize) {
         if (type == null) type = 1;
-        List<Mail> mails;
+
+        // 尝试从 Redis 获取缓存
+        String cacheKey = cacheKey(userId, type, page, pageSize);
+        @SuppressWarnings("unchecked")
+        PageResult<Mail> cached = (PageResult<Mail>) redisTemplate.opsForValue().get(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
+
+        Page<Mail> pageObj = new Page<>(page, pageSize);
+        IPage<Mail> result;
         switch (type) {
             case 2:
-                mails = mailMapper.selectSent(userId);
+                result = mailMapper.selectSentPage(pageObj, userId);
                 break;
             case 3:
-                mails = mailMapper.selectTrash(userId);
+                result = mailMapper.selectTrashPage(pageObj, userId);
                 break;
             case 4:
-                // 草稿箱
+                // 草稿箱不分页或简单分页
                 QueryWrapper<Mail> wrapper = new QueryWrapper<>();
-                wrapper.eq("sender_id", userId).eq("status", 2);
-                mails = mailMapper.selectList(wrapper);
+                wrapper.eq("sender_id", userId).eq("status", 2).orderByDesc("send_time");
+                Page<Mail> draftPage = mailMapper.selectPage(pageObj, wrapper);
+                result = draftPage;
                 break;
             default:
-                mails = mailMapper.selectInbox(userId);
+                result = mailMapper.selectInboxPage(pageObj, userId);
         }
-        // 为所有邮件解析收件人/抄送人昵称
-        for (Mail mail : mails) {
+
+        // 解析昵称
+        for (Mail mail : result.getRecords()) {
             resolveIdNames(mail);
         }
-        return mails;
+
+        PageResult<Mail> pageResult = new PageResult<>(
+                result.getRecords(), result.getTotal(), page, pageSize);
+
+        // 写入 Redis 缓存（5分钟过期）
+        redisTemplate.opsForValue().set(cacheKey, pageResult, Duration.ofMinutes(5));
+
+        return pageResult;
     }
 
     @Override
@@ -155,11 +199,19 @@ public class MailServiceImpl implements MailService {
     public void markAsRead(Long mailId, Long userId) {
         MailStatus status = mailStatusMapper.selectByMailIdAndUserId(mailId, userId);
         if (status == null) {
-            // 发件人查看自己的邮件
             return;
         }
         if (status.getIsRead() == 0) {
             mailStatusMapper.markAsRead(mailId, userId);
+            // 驱逐缓存
+            evictUserCache(userId);
+            // 清除未读数缓存
+            evictUnreadCache(userId);
+            // WebSocket 推送
+            if (notificationService != null) {
+                notificationService.notifyUser(userId, "MAIL_READ",
+                        Collections.singletonMap("mailId", mailId));
+            }
         }
     }
 
@@ -168,36 +220,42 @@ public class MailServiceImpl implements MailService {
     public void deleteMail(Long mailId, Long userId) {
         MailStatus status = mailStatusMapper.selectByMailIdAndUserId(mailId, userId);
         if (status != null) {
-            // 收件人/抄送人删除：软删除自己的 mail_status 记录
             mailStatusMapper.softDelete(mailId, userId);
         } else {
-            // 发件人删除自己已发送的邮件：创建一条 mail_status 记录标记为已删除
-            // 这样只影响发件人自己的视图，不影响收件人的收件箱
             Mail mail = mailMapper.selectById(mailId);
             if (mail != null && mail.getSenderId().equals(userId)) {
                 MailStatus ms = new MailStatus();
                 ms.setMailId(mailId);
                 ms.setUserId(userId);
-                ms.setIsRead(1);    // 发件人已读自己的邮件
-                ms.setIsDeleted(1); // 标记为已删除
+                ms.setIsRead(1);
+                ms.setIsDeleted(1);
                 ms.setSyncStatus(0);
                 mailStatusMapper.insert(ms);
             }
         }
+        evictUserCache(userId);
     }
 
     @Override
-    public List<Mail> searchMails(Long userId, String keyword) {
-        List<Mail> mails = mailMapper.searchMails(userId, keyword);
-        for (Mail mail : mails) {
+    public PageResult<Mail> searchMails(Long userId, String keyword, int page, int pageSize) {
+        Page<Mail> pageObj = new Page<>(page, pageSize);
+        IPage<Mail> result = mailMapper.searchMailsPage(pageObj, userId, keyword);
+        for (Mail mail : result.getRecords()) {
             resolveIdNames(mail);
         }
-        return mails;
+        return new PageResult<>(result.getRecords(), result.getTotal(), page, pageSize);
     }
 
     @Override
     public int getUnreadCount(Long userId) {
-        return mailStatusMapper.countUnread(userId);
+        String cacheKey = "mail:unread:" + userId;
+        String cached = stringRedisTemplate.opsForValue().get(cacheKey);
+        if (cached != null) {
+            return Integer.parseInt(cached);
+        }
+        int count = mailStatusMapper.countUnread(userId);
+        stringRedisTemplate.opsForValue().set(cacheKey, String.valueOf(count), 2, TimeUnit.MINUTES);
+        return count;
     }
 
     @Override
@@ -212,15 +270,13 @@ public class MailServiceImpl implements MailService {
         if (status == null || status.getIsDeleted() == 0) {
             throw new RuntimeException("邮件不在垃圾箱中");
         }
-
         Mail mail = mailMapper.selectById(mailId);
-        // 发件人恢复：删除 mail_status 记录（该记录是删除时创建的，恢复后应回到无记录状态）
         if (mail != null && mail.getSenderId().equals(userId)) {
             mailStatusMapper.deleteByMailIdAndUserId(mailId, userId);
         } else {
-            // 收件人/抄送人恢复：将 is_deleted 设回 0
             mailStatusMapper.restoreDelete(mailId, userId);
         }
+        evictUserCache(userId);
     }
 
     @Override
@@ -230,40 +286,35 @@ public class MailServiceImpl implements MailService {
         if (status == null || status.getIsDeleted() == 0) {
             throw new RuntimeException("邮件不在垃圾箱中");
         }
-
         Mail mail = mailMapper.selectById(mailId);
-        // 发件人彻底删除：删除 mail_status 后邮件会重新出现在"已发送"中，
-        // 因此需要将 mail.status 设为 0（发件人侧删除），彻底隐藏
         if (mail != null && mail.getSenderId().equals(userId)) {
             mailStatusMapper.deleteByMailIdAndUserId(mailId, userId);
             mail.setStatus(0);
             mailMapper.updateById(mail);
         } else {
-            // 收件人/抄送人彻底删除：删除 mail_status 记录即可
             mailStatusMapper.deleteByMailIdAndUserId(mailId, userId);
         }
+        evictUserCache(userId);
     }
 
     @Override
     @Transactional
     public void emptyTrash(Long userId) {
-        // 查询该用户垃圾箱中的所有记录
         QueryWrapper<MailStatus> wrapper = new QueryWrapper<>();
         wrapper.eq("user_id", userId).eq("is_deleted", 1);
         List<MailStatus> trashItems = mailStatusMapper.selectList(wrapper);
         for (MailStatus item : trashItems) {
             Long mailId = item.getMailId();
             Mail mail = mailMapper.selectById(mailId);
-            // 发件人清空：需要同时标记 mail.status=0
             if (mail != null && mail.getSenderId().equals(userId)) {
                 mailStatusMapper.deleteByMailIdAndUserId(mailId, userId);
                 mail.setStatus(0);
                 mailMapper.updateById(mail);
             } else {
-                // 收件人清空
                 mailStatusMapper.deleteByMailIdAndUserId(mailId, userId);
             }
         }
+        evictUserCache(userId);
     }
 
     @Override
@@ -274,28 +325,18 @@ public class MailServiceImpl implements MailService {
             throw new RuntimeException("用户不存在");
         }
 
-        // 草稿直接存储原始邮箱字符串，不解析为用户ID
         Mail mail = new Mail();
         mail.setSenderId(userId);
         mail.setSenderEmail(sender.getEmail());
-        mail.setReceiverIds(receiverEmails); // 存储原始邮箱字符串
+        mail.setReceiverIds(receiverEmails);
         mail.setCcIds(ccEmails != null && !ccEmails.isEmpty() ? ccEmails : null);
         mail.setSubject(subject != null ? subject : "");
         mail.setBody(body);
         mail.setSendTime(LocalDateTime.now());
-        mail.setStatus(2); // 草稿状态
+        mail.setStatus(2);
         mailMapper.insert(mail);
 
-        // 绑定附件
-        if (attachmentIds != null && !attachmentIds.isEmpty()) {
-            for (Long attId : attachmentIds) {
-                Attachment att = attachmentMapper.selectById(attId);
-                if (att != null) {
-                    att.setMailId(mail.getId());
-                    attachmentMapper.updateById(att);
-                }
-            }
-        }
+        bindAttachments(mail.getId(), attachmentIds);
 
         return mail;
     }
@@ -304,35 +345,21 @@ public class MailServiceImpl implements MailService {
     @Transactional
     public Mail updateDraft(Long draftId, Long userId, String receiverEmails, String ccEmails, String subject, String body, List<Long> attachmentIds) {
         Mail mail = mailMapper.selectById(draftId);
-        if (mail == null) {
-            throw new RuntimeException("草稿不存在");
-        }
-        if (!mail.getSenderId().equals(userId)) {
-            throw new RuntimeException("无权修改此草稿");
-        }
-        if (mail.getStatus() != 2) {
-            throw new RuntimeException("该邮件不是草稿");
-        }
+        if (mail == null) throw new RuntimeException("草稿不存在");
+        if (!mail.getSenderId().equals(userId)) throw new RuntimeException("无权修改此草稿");
+        if (mail.getStatus() != 2) throw new RuntimeException("该邮件不是草稿");
 
         mail.setReceiverIds(receiverEmails);
         mail.setCcIds(ccEmails != null && !ccEmails.isEmpty() ? ccEmails : null);
         mail.setSubject(subject);
         mail.setBody(body);
-        mail.setSendTime(LocalDateTime.now()); // 更新保存时间
+        mail.setSendTime(LocalDateTime.now());
         mailMapper.updateById(mail);
 
-        // 重新绑定附件：先解绑旧附件，再绑定新附件
+        // 重新绑定附件
         if (attachmentIds != null) {
-            // 解绑该草稿的所有旧附件
             attachmentMapper.unbindByMailId(draftId);
-            // 绑定新附件（可能为空）
-            for (Long attId : attachmentIds) {
-                Attachment att = attachmentMapper.selectById(attId);
-                if (att != null) {
-                    att.setMailId(draftId);
-                    attachmentMapper.updateById(att);
-                }
-            }
+            bindAttachments(draftId, attachmentIds);
         }
 
         return mail;
@@ -342,18 +369,10 @@ public class MailServiceImpl implements MailService {
     @Transactional
     public void deleteDraft(Long draftId, Long userId) {
         Mail mail = mailMapper.selectById(draftId);
-        if (mail == null) {
-            throw new RuntimeException("草稿不存在");
-        }
-        if (!mail.getSenderId().equals(userId)) {
-            throw new RuntimeException("无权删除此草稿");
-        }
-        if (mail.getStatus() != 2) {
-            throw new RuntimeException("该邮件不是草稿");
-        }
-        // 解绑附件
+        if (mail == null) throw new RuntimeException("草稿不存在");
+        if (!mail.getSenderId().equals(userId)) throw new RuntimeException("无权删除此草稿");
+        if (mail.getStatus() != 2) throw new RuntimeException("该邮件不是草稿");
         attachmentMapper.unbindByMailId(draftId);
-        // 删除草稿
         mailMapper.deleteById(draftId);
     }
 
@@ -361,53 +380,114 @@ public class MailServiceImpl implements MailService {
     @Transactional
     public Mail sendDraft(Long draftId, Long userId) {
         Mail mail = mailMapper.selectById(draftId);
-        if (mail == null) {
-            throw new RuntimeException("草稿不存在");
-        }
-        if (!mail.getSenderId().equals(userId)) {
-            throw new RuntimeException("无权发送此草稿");
-        }
-        if (mail.getStatus() != 2) {
-            throw new RuntimeException("该邮件不是草稿，无法发送");
-        }
+        if (mail == null) throw new RuntimeException("草稿不存在");
+        if (!mail.getSenderId().equals(userId)) throw new RuntimeException("无权发送此草稿");
+        if (mail.getStatus() != 2) throw new RuntimeException("该邮件不是草稿，无法发送");
 
-        // 将草稿中的邮箱字符串解析为用户ID
         String receiverIds = resolveEmailsToIdString(mail.getReceiverIds());
         String ccIds = resolveEmailsToIdString(mail.getCcIds());
 
-        // 更新邮件为已发送状态
         mail.setReceiverIds(receiverIds);
         mail.setCcIds(ccIds != null && !ccIds.isEmpty() ? ccIds : null);
         mail.setStatus(1);
         mail.setSendTime(LocalDateTime.now());
         mailMapper.updateById(mail);
 
-        // 为收件人和抄送人创建邮件状态记录
+        // 创建状态记录
         if (receiverIds != null) {
-            List<Long> receiverIdList = parseIdList(receiverIds);
-            for (Long receiverId : receiverIdList) {
+            for (Long receiverId : parseIdList(receiverIds)) {
                 createMailStatus(mail.getId(), receiverId);
+                pushNewMailNotification(receiverId, mail);
+                evictUserCache(receiverId);
             }
         }
-
         if (ccIds != null && !ccIds.isEmpty()) {
-            List<Long> ccIdList = parseIdList(ccIds);
-            for (Long ccId : ccIdList) {
+            for (Long ccId : parseIdList(ccIds)) {
                 createMailStatus(mail.getId(), ccId);
+                pushNewMailNotification(ccId, mail);
+                evictUserCache(ccId);
             }
         }
 
-        // 执行智能插件处理
         executePlugins(mail);
-
+        evictUserCache(userId);
         return mail;
+    }
+
+    @Override
+    @Transactional
+    public Mail forwardMail(Long forwarderId, Long originalMailId, String receiverEmails, String ccEmails, String additionalBody) {
+        Mail original = mailMapper.selectById(originalMailId);
+        if (original == null) throw new RuntimeException("原始邮件不存在");
+
+        User forwarder = userMapper.selectById(forwarderId);
+        if (forwarder == null) throw new RuntimeException("转发人不存在");
+
+        // 构建转发主题
+        String fwSubject = (original.getSubject() != null && original.getSubject().startsWith("Fw:"))
+                ? original.getSubject() : "Fw: " + original.getSubject();
+
+        // 构建转发正文
+        StringBuilder body = new StringBuilder();
+        if (additionalBody != null && !additionalBody.isEmpty()) {
+            body.append(additionalBody).append("\n\n");
+        }
+        body.append("---------- 原始邮件 ----------\n");
+        body.append("发件人: ").append(original.getSenderEmail()).append("\n");
+        body.append("发送时间: ").append(original.getSendTime() != null
+                ? original.getSendTime().format(DT_FMT) : "").append("\n");
+        body.append("收件人: ").append(original.getReceiverIds() != null
+                ? resolveReceiverEmails(original.getReceiverIds()) : "").append("\n");
+        body.append("主题: ").append(original.getSubject()).append("\n\n");
+        body.append(original.getBody());
+
+        // 复制原邮件附件
+        List<Long> newAttachmentIds = copyAttachments(originalMailId);
+
+        // 发送邮件
+        return sendMail(forwarderId, receiverEmails, ccEmails, fwSubject, body.toString(), newAttachmentIds);
+    }
+
+    @Override
+    @Transactional
+    public void batchDelete(List<Long> mailIds, Long userId) {
+        for (Long mailId : mailIds) {
+            deleteMail(mailId, userId);
+        }
+        evictUserCache(userId);
+    }
+
+    @Override
+    @Transactional
+    public void batchPermanentDelete(List<Long> mailIds, Long userId) {
+        for (Long mailId : mailIds) {
+            permanentDeleteMail(mailId, userId);
+        }
+        evictUserCache(userId);
+    }
+
+    @Override
+    public List<SyncMailEvent> syncChanges(Long userId, String since) {
+        List<MailStatus> changes = mailStatusMapper.selectChangesSince(userId, since);
+        List<SyncMailEvent> events = new ArrayList<>();
+        for (MailStatus ms : changes) {
+            String eventType;
+            if (ms.getIsDeleted() == 1 && ms.getIsRead() == 0) {
+                eventType = "DELETE";
+            } else if (ms.getIsDeleted() == 0 && ms.getIsRead() == 1 && ms.getReadTime() != null) {
+                eventType = "READ";
+            } else {
+                eventType = "NEW";
+            }
+            LocalDateTime eventTime = ms.getUpdatedTime() != null ? ms.getUpdatedTime()
+                    : (ms.getReadTime() != null ? ms.getReadTime() : LocalDateTime.now());
+            events.add(new SyncMailEvent(ms.getMailId(), eventType, eventTime));
+        }
+        return events;
     }
 
     // ==================== 私有方法 ====================
 
-    /**
-     * 创建邮件状态记录
-     */
     private void createMailStatus(Long mailId, Long userId) {
         MailStatus ms = new MailStatus();
         ms.setMailId(mailId);
@@ -418,31 +498,55 @@ public class MailServiceImpl implements MailService {
         mailStatusMapper.insert(ms);
     }
 
-    /**
-     * 将逗号分隔的邮箱字符串转换为逗号分隔的用户ID字符串
-     * 前端传来的是 "aa@bb.com,cc@dd.com"，数据库存的是 "1,2"
-     */
-    private String resolveEmailsToIdString(String emails) {
-        if (emails == null || emails.trim().isEmpty()) {
-            return null;
+    private void bindAttachments(Long mailId, List<Long> attachmentIds) {
+        if (attachmentIds != null && !attachmentIds.isEmpty()) {
+            for (Long attId : attachmentIds) {
+                Attachment att = attachmentMapper.selectById(attId);
+                if (att != null) {
+                    att.setMailId(mailId);
+                    attachmentMapper.updateById(att);
+                }
+            }
         }
+    }
+
+    private List<Long> copyAttachments(Long originalMailId) {
+        List<Attachment> originalAtts = attachmentMapper.selectByMailId(originalMailId);
+        List<Long> newIds = new ArrayList<>();
+        for (Attachment att : originalAtts) {
+            Attachment copy = new Attachment();
+            copy.setFileName(att.getFileName());
+            copy.setFilePath(att.getFilePath());
+            copy.setFileSize(att.getFileSize());
+            copy.setContentType(att.getContentType());
+            copy.setUploadTime(LocalDateTime.now());
+            attachmentMapper.insert(copy);
+            newIds.add(copy.getId());
+        }
+        return newIds;
+    }
+
+    private void pushNewMailNotification(Long receiverId, Mail mail) {
+        if (notificationService != null) {
+            notificationService.notifyNewMail(receiverId, mail.getId(), mail.getSenderEmail(), mail.getSubject());
+        }
+    }
+
+    private String resolveEmailsToIdString(String emails) {
+        if (emails == null || emails.trim().isEmpty()) return null;
         return Arrays.stream(emails.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .map(email -> {
                     User user = userMapper.selectByEmail(email);
-                    if (user == null) {
-                        throw new RuntimeException("用户不存在: " + email);
-                    }
+                    if (user == null) throw new RuntimeException("用户不存在: " + email);
                     return String.valueOf(user.getId());
                 })
                 .collect(Collectors.joining(","));
     }
 
-    /**
-     * 解析ID列表字符串 -> List<Long>
-     */
     private List<Long> parseIdList(String ids) {
+        if (ids == null || ids.trim().isEmpty()) return Collections.emptyList();
         return Arrays.stream(ids.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
@@ -450,23 +554,13 @@ public class MailServiceImpl implements MailService {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * 将邮件中的 receiverIds / ccIds 解析为昵称，填充到 receiverNames / ccNames 字段
-     */
     private void resolveIdNames(Mail mail) {
         mail.setReceiverNames(resolveIdsToNames(mail.getReceiverIds()));
         mail.setCcNames(resolveIdsToNames(mail.getCcIds()));
     }
 
-    /**
-     * 将逗号分隔的用户ID字符串解析为逗号分隔的用户昵称
-     * "1,2" -> "Alice,Bob"
-     * 对于草稿，receiver_ids 可能直接存储邮箱字符串，此时直接返回邮箱
-     */
     private String resolveIdsToNames(String ids) {
-        if (ids == null || ids.trim().isEmpty()) {
-            return null;
-        }
+        if (ids == null || ids.trim().isEmpty()) return null;
         return Arrays.stream(ids.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
@@ -475,22 +569,34 @@ public class MailServiceImpl implements MailService {
                         User user = userMapper.selectById(Long.valueOf(id));
                         if (user != null) {
                             return user.getNickname() != null && !user.getNickname().isEmpty()
-                                    ? user.getNickname()
-                                    : user.getEmail();
+                                    ? user.getNickname() : user.getEmail();
                         }
                         return "未知用户(" + id + ")";
                     } catch (NumberFormatException e) {
-                        // 草稿中存储的是原始邮箱字符串，直接返回
                         return id;
                     }
                 })
                 .collect(Collectors.joining(","));
     }
 
-    /**
-     * 执行所有已启用的插件
-     */
+    private String resolveReceiverEmails(String receiverIds) {
+        if (receiverIds == null || receiverIds.trim().isEmpty()) return "";
+        return Arrays.stream(receiverIds.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .map(id -> {
+                    try {
+                        User user = userMapper.selectById(Long.valueOf(id));
+                        return user != null ? user.getEmail() : id;
+                    } catch (NumberFormatException e) {
+                        return id;
+                    }
+                })
+                .collect(Collectors.joining(", "));
+    }
+
     private void executePlugins(Mail mail) {
+        // 编译时插件
         if (plugins != null && !plugins.isEmpty()) {
             for (PluginInterface plugin : plugins) {
                 try {
@@ -498,10 +604,40 @@ public class MailServiceImpl implements MailService {
                         plugin.process(mail);
                     }
                 } catch (Exception e) {
-                    // 插件失败不影响邮件发送
                     System.err.println("插件 [" + plugin.getName() + "] 执行异常: " + e.getMessage());
                 }
             }
         }
+        // 动态加载的插件
+        List<PluginInterface> dynamicPlugins = dynamicPluginRegistry.getAllPlugins();
+        for (PluginInterface plugin : dynamicPlugins) {
+            try {
+                if (plugin.isEnabled()) {
+                    plugin.process(mail);
+                }
+            } catch (Exception e) {
+                System.err.println("动态插件 [" + plugin.getName() + "] 执行异常: " + e.getMessage());
+            }
+        }
+    }
+
+    // ==================== Redis 缓存工具方法 ====================
+
+    private String cacheKey(Long userId, int type, int page, int pageSize) {
+        return "mail:list:" + userId + ":" + type + ":" + page + ":" + pageSize;
+    }
+
+    private void evictUserCache(Long userId) {
+        // 模糊删除用户所有邮件列表缓存
+        String pattern = "mail:list:" + userId + ":*";
+        Set<String> keys = redisTemplate.keys(pattern);
+        if (keys != null && !keys.isEmpty()) {
+            redisTemplate.delete(keys);
+        }
+        evictUnreadCache(userId);
+    }
+
+    private void evictUnreadCache(Long userId) {
+        stringRedisTemplate.delete("mail:unread:" + userId);
     }
 }

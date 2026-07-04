@@ -3,6 +3,13 @@
     <div class="toolbar">
       <h2>🗑️ 垃圾箱</h2>
       <div>
+        <el-button
+          v-if="selectedIds.length > 0"
+          type="danger"
+          @click="handleBatchPermanentDelete"
+        >
+          批量删除 ({{ selectedIds.length }})
+        </el-button>
         <el-button @click="refreshMails">
           <el-icon><Refresh /></el-icon> 刷新
         </el-button>
@@ -19,6 +26,12 @@
           :key="mail.id"
           class="mail-item"
         >
+          <div class="mail-check">
+            <el-checkbox
+              :model-value="selectedIds.includes(mail.id)"
+              @change="(val) => toggleSelect(mail.id, val)"
+            />
+          </div>
           <div class="mail-item-left" @click="$router.push(`/mail/${mail.id}?from=trash`)">
             <span class="mail-sender">{{ mail.senderEmail }}</span>
           </div>
@@ -28,20 +41,10 @@
           <div class="mail-item-right">
             <span class="mail-time">{{ formatTime(mail.sendTime) }}</span>
             <div class="mail-actions" @click.stop>
-              <el-button
-                type="primary"
-                size="small"
-                text
-                @click="handleRestore(mail.id)"
-              >
+              <el-button type="primary" size="small" text @click="handleRestore(mail.id)">
                 <el-icon><Upload /></el-icon> 恢复
               </el-button>
-              <el-button
-                type="danger"
-                size="small"
-                text
-                @click="handlePermanentDelete(mail.id)"
-              >
+              <el-button type="danger" size="small" text @click="handlePermanentDelete(mail.id)">
                 <el-icon><Delete /></el-icon> 删除
               </el-button>
             </div>
@@ -50,12 +53,22 @@
       </template>
       <el-empty v-else description="垃圾箱为空" />
     </div>
+
+    <div class="pagination-wrapper" v-if="total > pageSize">
+      <el-pagination
+        v-model:current-page="currentPage"
+        :page-size="pageSize"
+        :total="total"
+        layout="total, prev, pager, next"
+        @current-change="refreshMails"
+      />
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { listMails, restoreMail, emptyTrash } from '@/api/mail'
+import { listMails, restoreMail, emptyTrash, batchPermanentDeleteMail } from '@/api/mail'
 import { formatTime } from '@/utils'
 import { useMailActions } from '@/composables/useMailActions'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -65,17 +78,28 @@ const { permanentDeleteWithConfirm } = useMailActions()
 
 const mails = ref([])
 const loading = ref(false)
+const selectedIds = ref([])
+const currentPage = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
 
 onMounted(() => refreshMails())
 
 async function refreshMails() {
   loading.value = true
   try {
-    const res = await listMails(3)
-    mails.value = res.data || []
+    const res = await listMails(3, currentPage.value, pageSize.value)
+    const data = res.data
+    mails.value = data.records || data.data || []
+    total.value = data.total || 0
   } finally {
     loading.value = false
   }
+}
+
+function toggleSelect(id, val) {
+  if (val) selectedIds.value.push(id)
+  else selectedIds.value = selectedIds.value.filter(i => i !== id)
 }
 
 async function handleRestore(id) {
@@ -93,6 +117,20 @@ async function handlePermanentDelete(id) {
   if (deleted) {
     await refreshMails()
   }
+}
+
+async function handleBatchPermanentDelete() {
+  await ElMessageBox.confirm(
+    `确定永久删除选中的 ${selectedIds.value.length} 封邮件吗？不可恢复！`,
+    '批量删除',
+    { type: 'warning' }
+  )
+  try {
+    await batchPermanentDeleteMail(selectedIds.value)
+    ElMessage.success('已批量删除')
+    selectedIds.value = []
+    refreshMails()
+  } catch (e) {}
 }
 
 async function handleEmptyTrash() {
@@ -141,6 +179,10 @@ async function handleEmptyTrash() {
   background-color: #f5f7fa;
 }
 
+.mail-check {
+  padding: 0 4px;
+}
+
 .mail-item-left {
   min-width: 180px;
   cursor: pointer;
@@ -180,5 +222,11 @@ async function handleEmptyTrash() {
 
 .mail-item:hover .mail-actions {
   opacity: 1;
+}
+
+.pagination-wrapper {
+  display: flex;
+  justify-content: center;
+  padding: 16px 0;
 }
 </style>

@@ -8,6 +8,13 @@ export function sendMail(data) {
 }
 
 /**
+ * 转发邮件
+ */
+export function forwardMail(id, data) {
+  return request.post(`/mail/forward/${id}`, data)
+}
+
+/**
  * 拉取收件箱
  */
 export function receiveMails() {
@@ -15,10 +22,11 @@ export function receiveMails() {
 }
 
 /**
- * 邮件列表（按类型: 1=收件箱, 2=已发送, 3=垃圾箱, 4=草稿）
+ * 邮件列表（按类型，带分页）
+ * type: 1=收件箱, 2=已发送, 3=垃圾箱, 4=草稿
  */
-export function listMails(type = 1) {
-  return request.get('/mail/list', { params: { type } })
+export function listMails(type = 1, page = 1, pageSize = 20) {
+  return request.get('/mail/list', { params: { type, page, pageSize } })
 }
 
 /**
@@ -50,10 +58,31 @@ export function deleteMail(id) {
 }
 
 /**
- * 搜索邮件
+ * 批量删除邮件
  */
-export function searchMails(keyword) {
-  return request.get('/mail/search', { params: { keyword } })
+export function batchDeleteMail(mailIds) {
+  return request.delete('/mail/batch-delete', { data: mailIds })
+}
+
+/**
+ * 批量永久删除邮件
+ */
+export function batchPermanentDeleteMail(mailIds) {
+  return request.delete('/mail/batch-permanent-delete', { data: mailIds })
+}
+
+/**
+ * 搜索邮件（带分页）
+ */
+export function searchMails(keyword, page = 1, pageSize = 20) {
+  return request.get('/mail/search', { params: { keyword, page, pageSize } })
+}
+
+/**
+ * 邮件增量同步
+ */
+export function syncMails(since) {
+  return request.get('/mail/sync', { params: { since } })
 }
 
 /**

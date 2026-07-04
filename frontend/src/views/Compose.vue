@@ -72,7 +72,7 @@
 import { reactive, ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
-import { sendMail, saveDraft as saveDraftApi, updateDraft, sendDraft, mailDetail } from '@/api/mail'
+import { sendMail, saveDraft as saveDraftApi, updateDraft, sendDraft, mailDetail, mailAttachments } from '@/api/mail'
 import { uploadAttachment } from '@/api/attachment'
 import { ElMessage } from 'element-plus'
 import { Upload } from '@element-plus/icons-vue'
@@ -96,14 +96,18 @@ const form = reactive({
   body: ''
 })
 
-// 初始化：加载回复参数或草稿内容
+// 初始化：加载回复参数、转发内容或草稿
 onMounted(async () => {
   const draftIdParam = route.query.draftId
+  const forwardIdParam = route.query.forwardId
 
   if (draftIdParam) {
     // 加载已有草稿
     draftId.value = Number(draftIdParam)
     await loadDraft(draftId.value)
+  } else if (forwardIdParam) {
+    // 加载转发内容
+    await loadForwardMail(Number(forwardIdParam))
   } else {
     // 从路由 query 参数自动填充（用于回复功能）
     if (route.query.to) {
@@ -130,6 +134,34 @@ async function loadDraft(id) {
     }
   } catch (e) {
     ElMessage.error('加载草稿失败')
+    router.push('/compose')
+  }
+}
+
+async function loadForwardMail(id) {
+  try {
+    const res = await mailDetail(id)
+    const mail = res.data
+    if (mail) {
+      form.subject = `Fw: ${mail.subject || ''}`
+      // 构建转发引用正文
+      form.body = `\n\n---------- 原始邮件 ----------\n发件人: ${mail.senderEmail || ''}\n发送时间: ${mail.sendTime || ''}\n收件人: ${mail.receiverNames || mail.receiverIds || ''}\n主题: ${mail.subject || ''}\n\n${mail.body || ''}`
+      // 加载原始邮件的附件ID（通过附件列表获取）
+      try {
+        const attRes = await mailAttachments(id)
+        if (attRes.data && attRes.data.length > 0) {
+          // 转发时附件自动可用，后端会复制
+          for (const att of attRes.data) {
+            uploadedIds.value.push(att.id)
+            fileList.value.push({ name: att.fileName, id: att.id })
+          }
+        }
+      } catch (e) {
+        // 附件加载失败不影响
+      }
+    }
+  } catch (e) {
+    ElMessage.error('加载原始邮件失败')
     router.push('/compose')
   }
 }

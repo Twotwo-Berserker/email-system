@@ -50,6 +50,10 @@ public class Mail {
     /** 智能分类标签（插件生成） */
     private String category;
 
+    /** 当前用户是否已读此邮件（非数据库字段，从 mail_status JOIN 查询） */
+    @TableField(exist = false)
+    private Integer isRead;
+
     /** 收件人昵称列表（非数据库字段，用于前端显示） */
     @TableField(exist = false)
     private String receiverNames;

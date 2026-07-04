@@ -1,7 +1,6 @@
 package com.mailsystem.controller;
 
-import com.mailsystem.dto.ApiResponse;
-import com.mailsystem.dto.SendMailRequest;
+import com.mailsystem.dto.*;
 import com.mailsystem.entity.Attachment;
 import com.mailsystem.entity.Mail;
 import com.mailsystem.service.MailService;
@@ -28,14 +27,23 @@ public class MailController {
      */
     @PostMapping("/send")
     public ApiResponse<Mail> send(HttpServletRequest request, @Valid @RequestBody SendMailRequest req) {
-        try {
-            Long userId = (Long) request.getAttribute("userId");
-            Mail mail = mailService.sendMail(userId, req.getReceiverEmails(), req.getCcEmails(),
-                    req.getSubject(), req.getBody(), req.getAttachmentIds());
-            return ApiResponse.ok("发送成功", mail);
-        } catch (RuntimeException e) {
-            return ApiResponse.error(e.getMessage());
-        }
+        Long userId = (Long) request.getAttribute("userId");
+        Mail mail = mailService.sendMail(userId, req.getReceiverEmails(), req.getCcEmails(),
+                req.getSubject(), req.getBody(), req.getAttachmentIds());
+        return ApiResponse.ok("发送成功", mail);
+    }
+
+    /**
+     * 转发邮件
+     * POST /mail/forward/{id}
+     */
+    @PostMapping("/forward/{id}")
+    public ApiResponse<Mail> forward(HttpServletRequest request, @PathVariable Long id,
+                                     @Valid @RequestBody ForwardMailRequest req) {
+        Long userId = (Long) request.getAttribute("userId");
+        Mail mail = mailService.forwardMail(userId, id, req.getReceiverEmails(),
+                req.getCcEmails(), req.getAdditionalBody());
+        return ApiResponse.ok("转发成功", mail);
     }
 
     /**
@@ -50,16 +58,18 @@ public class MailController {
     }
 
     /**
-     * 邮件列表（按类型）
-     * GET /mail/list?type=1
+     * 邮件列表（按类型，带分页）
+     * GET /mail/list?type=1&page=1&pageSize=20
      * type: 1=收件箱, 2=已发送, 3=垃圾箱, 4=草稿
      */
     @GetMapping("/list")
-    public ApiResponse<List<Mail>> list(HttpServletRequest request,
-                                        @RequestParam(defaultValue = "1") Integer type) {
+    public ApiResponse<PageResult<Mail>> list(HttpServletRequest request,
+                                              @RequestParam(defaultValue = "1") Integer type,
+                                              @RequestParam(defaultValue = "1") int page,
+                                              @RequestParam(defaultValue = "20") int pageSize) {
         Long userId = (Long) request.getAttribute("userId");
-        List<Mail> mails = mailService.listMails(userId, type);
-        return ApiResponse.ok(mails);
+        PageResult<Mail> result = mailService.listMails(userId, type, page, pageSize);
+        return ApiResponse.ok(result);
     }
 
     /**
@@ -68,17 +78,10 @@ public class MailController {
      */
     @GetMapping("/detail/{id}")
     public ApiResponse<Mail> detail(HttpServletRequest request, @PathVariable Long id) {
-        try {
-            Long userId = (Long) request.getAttribute("userId");
-            Mail mail = mailService.getMailDetail(id, userId);
-            // 自动标记已读
-            mailService.markAsRead(id, userId);
-
-            // 将附件和状态信息合并到返回
-            return ApiResponse.ok(mail);
-        } catch (RuntimeException e) {
-            return ApiResponse.error(e.getMessage());
-        }
+        Long userId = (Long) request.getAttribute("userId");
+        Mail mail = mailService.getMailDetail(id, userId);
+        mailService.markAsRead(id, userId);
+        return ApiResponse.ok(mail);
     }
 
     /**
@@ -109,24 +112,56 @@ public class MailController {
     @DeleteMapping("/delete/{id}")
     public ApiResponse<Void> delete(HttpServletRequest request, @PathVariable Long id) {
         Long userId = (Long) request.getAttribute("userId");
-        try {
-            mailService.deleteMail(id, userId);
-            return ApiResponse.ok("已删除", null);
-        } catch (RuntimeException e) {
-            return ApiResponse.error(e.getMessage());
-        }
+        mailService.deleteMail(id, userId);
+        return ApiResponse.ok("已删除", null);
+    }
+
+    /**
+     * 批量删除邮件
+     * DELETE /mail/batch-delete
+     */
+    @DeleteMapping("/batch-delete")
+    public ApiResponse<Void> batchDelete(HttpServletRequest request, @RequestBody List<Long> mailIds) {
+        Long userId = (Long) request.getAttribute("userId");
+        mailService.batchDelete(mailIds, userId);
+        return ApiResponse.ok("已批量删除", null);
+    }
+
+    /**
+     * 批量永久删除邮件（垃圾箱用）
+     * DELETE /mail/batch-permanent-delete
+     */
+    @DeleteMapping("/batch-permanent-delete")
+    public ApiResponse<Void> batchPermanentDelete(HttpServletRequest request, @RequestBody List<Long> mailIds) {
+        Long userId = (Long) request.getAttribute("userId");
+        mailService.batchPermanentDelete(mailIds, userId);
+        return ApiResponse.ok("已批量彻底删除", null);
     }
 
     /**
      * 搜索邮件
-     * GET /mail/search?keyword=xxx
+     * GET /mail/search?keyword=xxx&page=1&pageSize=20
      */
     @GetMapping("/search")
-    public ApiResponse<List<Mail>> search(HttpServletRequest request,
-                                          @RequestParam String keyword) {
+    public ApiResponse<PageResult<Mail>> search(HttpServletRequest request,
+                                                @RequestParam String keyword,
+                                                @RequestParam(defaultValue = "1") int page,
+                                                @RequestParam(defaultValue = "20") int pageSize) {
         Long userId = (Long) request.getAttribute("userId");
-        List<Mail> mails = mailService.searchMails(userId, keyword);
-        return ApiResponse.ok(mails);
+        PageResult<Mail> result = mailService.searchMails(userId, keyword, page, pageSize);
+        return ApiResponse.ok(result);
+    }
+
+    /**
+     * 邮件增量同步
+     * GET /mail/sync?since=2026-01-01 00:00:00
+     */
+    @GetMapping("/sync")
+    public ApiResponse<List<SyncMailEvent>> sync(HttpServletRequest request,
+                                                  @RequestParam String since) {
+        Long userId = (Long) request.getAttribute("userId");
+        List<SyncMailEvent> events = mailService.syncChanges(userId, since);
+        return ApiResponse.ok(events);
     }
 
     /**
@@ -147,12 +182,8 @@ public class MailController {
     @PutMapping("/restore/{id}")
     public ApiResponse<Void> restore(HttpServletRequest request, @PathVariable Long id) {
         Long userId = (Long) request.getAttribute("userId");
-        try {
-            mailService.restoreMail(id, userId);
-            return ApiResponse.ok("已恢复", null);
-        } catch (RuntimeException e) {
-            return ApiResponse.error(e.getMessage());
-        }
+        mailService.restoreMail(id, userId);
+        return ApiResponse.ok("已恢复", null);
     }
 
     /**
@@ -162,12 +193,8 @@ public class MailController {
     @DeleteMapping("/permanent/{id}")
     public ApiResponse<Void> permanentDelete(HttpServletRequest request, @PathVariable Long id) {
         Long userId = (Long) request.getAttribute("userId");
-        try {
-            mailService.permanentDeleteMail(id, userId);
-            return ApiResponse.ok("已彻底删除", null);
-        } catch (RuntimeException e) {
-            return ApiResponse.error(e.getMessage());
-        }
+        mailService.permanentDeleteMail(id, userId);
+        return ApiResponse.ok("已彻底删除", null);
     }
 
     /**
@@ -177,12 +204,8 @@ public class MailController {
     @PutMapping("/trash/empty")
     public ApiResponse<Void> emptyTrash(HttpServletRequest request) {
         Long userId = (Long) request.getAttribute("userId");
-        try {
-            mailService.emptyTrash(userId);
-            return ApiResponse.ok("垃圾箱已清空", null);
-        } catch (RuntimeException e) {
-            return ApiResponse.error(e.getMessage());
-        }
+        mailService.emptyTrash(userId);
+        return ApiResponse.ok("垃圾箱已清空", null);
     }
 
     /**
@@ -191,14 +214,10 @@ public class MailController {
      */
     @PostMapping("/draft")
     public ApiResponse<Mail> saveDraft(HttpServletRequest request, @Valid @RequestBody SendMailRequest req) {
-        try {
-            Long userId = (Long) request.getAttribute("userId");
-            Mail mail = mailService.saveDraft(userId, req.getReceiverEmails(), req.getCcEmails(),
-                    req.getSubject(), req.getBody(), req.getAttachmentIds());
-            return ApiResponse.ok("草稿已保存", mail);
-        } catch (RuntimeException e) {
-            return ApiResponse.error(e.getMessage());
-        }
+        Long userId = (Long) request.getAttribute("userId");
+        Mail mail = mailService.saveDraft(userId, req.getReceiverEmails(), req.getCcEmails(),
+                req.getSubject(), req.getBody(), req.getAttachmentIds());
+        return ApiResponse.ok("草稿已保存", mail);
     }
 
     /**
@@ -208,14 +227,10 @@ public class MailController {
     @PutMapping("/draft/{id}")
     public ApiResponse<Mail> updateDraft(HttpServletRequest request, @PathVariable Long id,
                                           @Valid @RequestBody SendMailRequest req) {
-        try {
-            Long userId = (Long) request.getAttribute("userId");
-            Mail mail = mailService.updateDraft(id, userId, req.getReceiverEmails(), req.getCcEmails(),
-                    req.getSubject(), req.getBody(), req.getAttachmentIds());
-            return ApiResponse.ok("草稿已更新", mail);
-        } catch (RuntimeException e) {
-            return ApiResponse.error(e.getMessage());
-        }
+        Long userId = (Long) request.getAttribute("userId");
+        Mail mail = mailService.updateDraft(id, userId, req.getReceiverEmails(), req.getCcEmails(),
+                req.getSubject(), req.getBody(), req.getAttachmentIds());
+        return ApiResponse.ok("草稿已更新", mail);
     }
 
     /**
@@ -224,13 +239,9 @@ public class MailController {
      */
     @PutMapping("/draft/{id}/send")
     public ApiResponse<Mail> sendDraft(HttpServletRequest request, @PathVariable Long id) {
-        try {
-            Long userId = (Long) request.getAttribute("userId");
-            Mail mail = mailService.sendDraft(id, userId);
-            return ApiResponse.ok("草稿已发送", mail);
-        } catch (RuntimeException e) {
-            return ApiResponse.error(e.getMessage());
-        }
+        Long userId = (Long) request.getAttribute("userId");
+        Mail mail = mailService.sendDraft(id, userId);
+        return ApiResponse.ok("草稿已发送", mail);
     }
 
     /**
@@ -239,12 +250,8 @@ public class MailController {
      */
     @DeleteMapping("/draft/{id}")
     public ApiResponse<Void> deleteDraft(HttpServletRequest request, @PathVariable Long id) {
-        try {
-            Long userId = (Long) request.getAttribute("userId");
-            mailService.deleteDraft(id, userId);
-            return ApiResponse.ok("草稿已删除", null);
-        } catch (RuntimeException e) {
-            return ApiResponse.error(e.getMessage());
-        }
+        Long userId = (Long) request.getAttribute("userId");
+        mailService.deleteDraft(id, userId);
+        return ApiResponse.ok("草稿已删除", null);
     }
 }

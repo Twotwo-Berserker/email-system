@@ -311,7 +311,80 @@ GET /attachment/download/{id}
 
 ---
 
-## 12. 插件管理
+## 12. 转发邮件
+
+```
+POST /mail/forward/{id}
+```
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| receiverEmails | String | 是 | 收件人邮箱，多个用逗号分隔 |
+| ccEmails | String | 否 | 抄送人邮箱，多个用逗号分隔 |
+| additionalBody | String | 否 | 附加说明文字 |
+
+原邮件的主题会自动添加 `Fw:` 前缀，附件会自动复制。
+
+---
+
+## 13. 批量删除邮件
+
+```
+DELETE /mail/batch-delete
+```
+
+请求体: `[mailId1, mailId2, ...]`
+
+```
+DELETE /mail/batch-permanent-delete
+```
+
+请求体: `[mailId1, mailId2, ...]`（垃圾箱中使用，不可恢复）
+
+---
+
+## 14. 邮件增量同步
+
+```
+GET /mail/sync?since=2026-01-01 00:00:00
+```
+
+返回自指定时间以来的状态变更事件列表：
+
+```json
+{
+  "code": 200,
+  "data": [
+    { "mailId": 100, "eventType": "NEW", "eventTime": "2026-01-01 10:30:00" },
+    { "mailId": 101, "eventType": "READ", "eventTime": "2026-01-01 11:00:00" }
+  ]
+}
+```
+
+---
+
+## 15. WebSocket 实时推送
+
+连接端点: `ws://localhost:8080/ws` (SockJS fallback 可用)
+
+客户端订阅频道: `/topic/user/{userId}`
+
+推送消息格式:
+```json
+{
+  "type": "NEW_MAIL",
+  "payload": {
+    "mailId": 100,
+    "senderEmail": "sender@example.com",
+    "subject": "邮件主题"
+  },
+  "timestamp": 1620000000000
+}
+```
+
+---
+
+## 16. 插件管理
 
 **获取插件列表:**
 
@@ -342,8 +415,82 @@ PUT /plugin/enable
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| pluginName | String | 是 | 插件名称，如上所示 |
+| pluginName | String | 是 | 插件名称 |
 | enabled | Boolean | 是 | true=启用, false=禁用 |
+
+---
+
+## 17. LLM大模型配置
+
+**获取LLM配置:**
+
+```
+GET /plugin/llm/config
+```
+
+**更新LLM配置:**
+
+```
+PUT /plugin/llm/configure
+```
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| apiEndpoint | String | 否 | API端点 |
+| apiKey | String | 否 | API密钥 |
+| modelName | String | 否 | 模型名称 |
+| enabled | Boolean | 否 | 是否启用 |
+
+---
+
+## 18. 动态JAR插件管理
+
+**上传并加载JAR插件:**
+
+```
+POST /plugin/load
+Content-Type: multipart/form-data
+```
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| file | File | 是 | JAR插件文件 |
+
+**卸载动态插件:**
+
+```
+DELETE /plugin/unload/{name}
+```
+
+**列出已加载的动态插件:**
+
+```
+GET /plugin/dynamic/list
+```
+
+---
+
+## 分页说明
+
+邮件列表接口 (`/mail/list`, `/mail/search`) 支持分页参数:
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| page | int | 1 | 页码 |
+| pageSize | int | 20 | 每页大小 |
+
+分页响应格式:
+```json
+{
+  "code": 200,
+  "data": {
+    "records": [...],
+    "total": 150,
+    "page": 1,
+    "pageSize": 20
+  }
+}
+```
 
 ---
 

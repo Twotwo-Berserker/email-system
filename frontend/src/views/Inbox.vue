@@ -9,6 +9,13 @@
         <el-button @click="refreshMails">
           <el-icon><Refresh /></el-icon> 刷新
         </el-button>
+        <el-button
+          v-if="selectedIds.length > 0"
+          type="danger"
+          @click="handleBatchDelete"
+        >
+          <el-icon><Delete /></el-icon> 批量删除 ({{ selectedIds.length }})
+        </el-button>
       </div>
       <div class="toolbar-right">
         <el-input
@@ -62,13 +69,24 @@
       </template>
       <el-empty v-else description="收件箱为空" />
     </div>
+
+    <!-- 分页 -->
+    <div class="pagination-wrapper" v-if="total > pageSize">
+      <el-pagination
+        v-model:current-page="currentPage"
+        :page-size="pageSize"
+        :total="total"
+        layout="total, prev, pager, next"
+        @current-change="refreshMails"
+      />
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { listMails, deleteMail as apiDelete, searchMails } from '@/api/mail'
+import { listMails, deleteMail as apiDelete, searchMails, batchDeleteMail } from '@/api/mail'
 import { formatTime, truncateSummary } from '@/utils'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
@@ -78,6 +96,9 @@ const mails = ref([])
 const loading = ref(false)
 const keyword = ref('')
 const selectedIds = ref([])
+const currentPage = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
 
 onMounted(() => {
   refreshMails()
@@ -86,22 +107,37 @@ onMounted(() => {
 async function refreshMails() {
   loading.value = true
   try {
-    const res = await listMails(1)
-    mails.value = res.data || []
+    if (keyword.value.trim()) {
+      const res = await searchMails(keyword.value.trim(), currentPage.value, pageSize.value)
+      const data = res.data
+      mails.value = data.records || data.data || []
+      total.value = data.total || 0
+    } else {
+      const res = await listMails(1, currentPage.value, pageSize.value)
+      const data = res.data
+      mails.value = data.records || data.data || []
+      total.value = data.total || 0
+    }
   } finally {
     loading.value = false
   }
 }
 
 async function handleSearch() {
-  if (!keyword.value.trim()) {
-    refreshMails()
-    return
-  }
+  currentPage.value = 1
   loading.value = true
   try {
-    const res = await searchMails(keyword.value.trim())
-    mails.value = res.data || []
+    if (!keyword.value.trim()) {
+      const res = await listMails(1, 1, pageSize.value)
+      const data = res.data
+      mails.value = data.records || data.data || []
+      total.value = data.total || 0
+      return
+    }
+    const res = await searchMails(keyword.value.trim(), 1, pageSize.value)
+    const data = res.data
+    mails.value = data.records || data.data || []
+    total.value = data.total || 0
   } finally {
     loading.value = false
   }
@@ -112,13 +148,28 @@ function openMail(mail) {
 }
 
 function isMailRead(mail) {
-  // 简化判断：假设 mailStatus 会在详情页加载
-  return false
+  return mail.isRead === 1
 }
 
 function toggleSelect(id, val) {
   if (val) selectedIds.value.push(id)
   else selectedIds.value = selectedIds.value.filter(i => i !== id)
+}
+
+async function handleBatchDelete() {
+  await ElMessageBox.confirm(
+    `确定批量删除选中的 ${selectedIds.value.length} 封邮件吗？`,
+    '批量删除',
+    { type: 'warning' }
+  )
+  try {
+    await batchDeleteMail(selectedIds.value)
+    ElMessage.success('已批量删除')
+    selectedIds.value = []
+    refreshMails()
+  } catch (e) {
+    // 取消或出错
+  }
 }
 
 async function handleDelete(mail) {
@@ -232,5 +283,11 @@ async function handleDelete(mail) {
   color: #909399;
   font-size: 13px;
   white-space: nowrap;
+}
+
+.pagination-wrapper {
+  display: flex;
+  justify-content: center;
+  padding: 16px 0;
 }
 </style>

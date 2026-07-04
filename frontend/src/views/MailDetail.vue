@@ -9,11 +9,14 @@
         <el-button @click="handleReply">
           <el-icon><ChatDotRound /></el-icon> 回复
         </el-button>
+        <el-button @click="handleForward">
+          <el-icon><Share /></el-icon> 转发
+        </el-button>
         <el-button v-if="isFromTrash" type="success" :loading="restoring" @click="handleRestore">
           <el-icon><Upload /></el-icon> 恢复
         </el-button>
         <el-button type="danger" @click="handleDelete">
-          <el-icon><Delete /></el-icon> {{ isFromTrash ? '删除' : '删除' }}
+          <el-icon><Delete /></el-icon> 删除
         </el-button>
       </div>
 
@@ -93,10 +96,14 @@ import { getFileIcon } from '@/utils'
 import { mailDetail, mailAttachments, markAsRead, deleteMail, restoreMail } from '@/api/mail'
 import { downloadAttachment, previewAttachment } from '@/api/attachment'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, ChatDotRound, Upload } from '@element-plus/icons-vue'
+import { ArrowLeft, ChatDotRound, Upload, Share } from '@element-plus/icons-vue'
 import { useMailActions } from '@/composables/useMailActions'
+import { useLocalCache } from '@/composables/useLocalCache'
+import { useUserStore } from '@/stores/user'
 
 const { permanentDeleteWithConfirm } = useMailActions()
+const { invalidateMailCache } = useLocalCache()
+const userStore = useUserStore()
 
 const route = useRoute()
 const router = useRouter()
@@ -120,8 +127,11 @@ onMounted(async () => {
     ])
     mail.value = mailRes.data
     attachments.value = attRes.data || []
-    // 标记已读
     await markAsRead(id)
+    // 使缓存失效
+    if (userStore.userInfo?.id) {
+      invalidateMailCache(userStore.userInfo.id)
+    }
   } catch (e) {
     ElMessage.error('加载邮件失败')
   } finally {
@@ -135,6 +145,15 @@ function handleReply() {
     query: {
       to: mail.value.senderEmail,
       subject: `Re: ${mail.value.subject}`
+    }
+  })
+}
+
+function handleForward() {
+  router.push({
+    path: '/compose',
+    query: {
+      forwardId: mail.value.id
     }
   })
 }

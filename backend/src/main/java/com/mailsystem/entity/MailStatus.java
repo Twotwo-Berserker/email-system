@@ -31,4 +31,7 @@ public class MailStatus {
 
     /** 阅读时间 */
     private LocalDateTime readTime;
+
+    /** 状态更新时间（用于增量同步） */
+    private LocalDateTime updatedTime;
 }
