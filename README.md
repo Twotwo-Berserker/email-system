@@ -1,4 +1,4 @@
-# 📧 邮件系统 — 2026 软件开发综合实训
+# 📧 邮件系统 — 2026 软件开发综合实训Demo
 
 > 全栈 Web 邮件系统，Vue3 + Element Plus 前端，SpringBoot 后端，MySQL 数据库，Redis 缓存，MinIO 对象存储
 >
