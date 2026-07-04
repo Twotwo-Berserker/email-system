@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
@@ -51,13 +52,35 @@ public class SummaryPlugin implements PluginInterface {
 
     /**
      * 异步生成摘要
+     * 如果 LLM 大模型已启用，则跳过规则摘要，由 LlmPlugin 生成更高质量的摘要
      */
     @Override
     @Async
     public void process(Mail mail) {
+        // LLM 已启用且配置了密钥时，由 LlmPlugin 负责生成摘要，本插件让步
+        if (isLlmAvailable()) {
+            return;
+        }
         String summary = generateSummary(mail);
         if (summary != null) {
             mailMapper.updateSummary(mail.getId(), summary);
+        }
+    }
+
+    /**
+     * 检查 LLM 大模型是否可用
+     */
+    private boolean isLlmAvailable() {
+        try {
+            Map<String, Object> llmConfig = pluginService.getLlmConfig();
+            if (llmConfig == null) return false;
+            Object enabled = llmConfig.get("enabled");
+            boolean isEnabled = (enabled instanceof Number) && ((Number) enabled).intValue() == 1;
+            if (!isEnabled) return false;
+            String apiKey = (String) llmConfig.get("apiKey");
+            return apiKey != null && !apiKey.isEmpty();
+        } catch (Exception e) {
+            return false;
         }
     }
 

@@ -41,16 +41,26 @@ public class JwtUtil {
      * 从 Token 中解析用户ID
      */
     public Long getUserIdFromToken(String token) {
-        Claims claims = parseToken(token);
-        return claims != null ? Long.valueOf(claims.get("userId").toString()) : null;
+        try {
+            Claims claims = parseToken(token);
+            return claims != null ? Long.valueOf(claims.get("userId").toString()) : null;
+        } catch (Exception e) {
+            System.err.println("[JwtUtil] 解析userId失败: " + e.getMessage());
+            return null;
+        }
     }
 
     /**
      * 从 Token 中解析邮箱
      */
     public String getEmailFromToken(String token) {
-        Claims claims = parseToken(token);
-        return claims != null ? claims.getSubject() : null;
+        try {
+            Claims claims = parseToken(token);
+            return claims != null ? claims.getSubject() : null;
+        } catch (Exception e) {
+            System.err.println("[JwtUtil] 解析email失败: " + e.getMessage());
+            return null;
+        }
     }
 
     /**
@@ -61,23 +71,18 @@ public class JwtUtil {
             parseToken(token);
             return true;
         } catch (Exception e) {
+            System.err.println("[JwtUtil] Token校验失败: " + e.getMessage());
             return false;
         }
     }
 
     /**
-     * 解析 Token Claims
+     * 解析 Token Claims（不吞异常，让调用方处理）
      */
     private Claims parseToken(String token) {
-        try {
-            return Jwts.parser()
-                    .setSigningKey(secret)
-                    .parseClaimsJws(token)
-                    .getBody();
-        } catch (ExpiredJwtException e) {
-            return null;
-        } catch (Exception e) {
-            return null;
-        }
+        return Jwts.parser()
+                .setSigningKey(secret)
+                .parseClaimsJws(token)
+                .getBody();
     }
 }

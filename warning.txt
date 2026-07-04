@@ -1,0 +1,63 @@
+[{
+	"resource": "/D:/EMAILSYSTEM/private/email-system/backend/",
+	"owner": "_generated_diagnostic_collection_name_#3",
+	"code": "0",
+	"severity": 4,
+	"message": "Build path specifies execution environment JavaSE-21. There are no JREs installed in the workspace that are strictly compatible with this environment.",
+	"source": "Java",
+	"startLineNumber": 1,
+	"startColumn": 1,
+	"endLineNumber": 1,
+	"endColumn": 1,
+	"origin": "extHost1"
+},{
+	"resource": "/D:/EMAILSYSTEM/private/email-system/backend/",
+	"owner": "_generated_diagnostic_collection_name_#3",
+	"code": "0",
+	"severity": 4,
+	"message": "The compiler compliance specified is 21 but a JRE 23 is used",
+	"source": "Java",
+	"startLineNumber": 1,
+	"startColumn": 1,
+	"endLineNumber": 1,
+	"endColumn": 1,
+	"origin": "extHost1"
+},{
+	"resource": "/d:/EMAILSYSTEM/private/email-system/backend/src/main/java/com/mailsystem/plugin/llm/LlmPlugin.java",
+	"owner": "_generated_diagnostic_collection_name_#3",
+	"code": "16777761",
+	"severity": 4,
+	"message": "Type safety: Unchecked cast from Object to List<Map<String,Object>>",
+	"source": "Java",
+	"startLineNumber": 112,
+	"startColumn": 53,
+	"endLineNumber": 112,
+	"endColumn": 104,
+	"modelVersionId": 1,
+	"origin": "extHost1"
+},{
+	"resource": "/d:/EMAILSYSTEM/private/email-system/backend/src/main/java/com/mailsystem/plugin/llm/LlmPlugin.java",
+	"owner": "_generated_diagnostic_collection_name_#3",
+	"code": "16777761",
+	"severity": 4,
+	"message": "Type safety: Unchecked cast from Object to Map<String,Object>",
+	"source": "Java",
+	"startLineNumber": 114,
+	"startColumn": 51,
+	"endLineNumber": 114,
+	"endColumn": 102,
+	"modelVersionId": 1,
+	"origin": "extHost1"
+},{
+	"resource": "/D:/EMAILSYSTEM/private/email-system/backend/pom.xml",
+	"owner": "_generated_diagnostic_collection_name_#3",
+	"code": "0",
+	"severity": 2,
+	"message": "The build file has been changed and may need reload to make it effective.",
+	"source": "Java",
+	"startLineNumber": 1,
+	"startColumn": 1,
+	"endLineNumber": 1,
+	"endColumn": 1,
+	"origin": "extHost1"
+}]

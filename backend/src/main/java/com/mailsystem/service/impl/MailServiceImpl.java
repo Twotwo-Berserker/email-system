@@ -137,10 +137,9 @@ public class MailServiceImpl implements MailService {
     public PageResult<Mail> listMails(Long userId, Integer type, int page, int pageSize) {
         if (type == null) type = 1;
 
-        // 尝试从 Redis 获取缓存
+        // 尝试从 Redis 获取缓存（处理序列化兼容性问题）
         String cacheKey = cacheKey(userId, type, page, pageSize);
-        @SuppressWarnings("unchecked")
-        PageResult<Mail> cached = (PageResult<Mail>) redisTemplate.opsForValue().get(cacheKey);
+        PageResult<Mail> cached = getCachedPageResult(cacheKey);
         if (cached != null) {
             return cached;
         }
@@ -212,6 +211,50 @@ public class MailServiceImpl implements MailService {
                 notificationService.notifyUser(userId, "MAIL_READ",
                         Collections.singletonMap("mailId", mailId));
             }
+        }
+    }
+
+    @Override
+    @Transactional
+    public void markAsUnread(Long mailId, Long userId) {
+        if (userId == null) {
+            System.err.println("[markAsUnread] userId is null for mailId=" + mailId);
+            return;
+        }
+        MailStatus status = mailStatusMapper.selectByMailIdAndUserId(mailId, userId);
+        if (status == null) {
+            // 如果收件人侧没有状态记录，创建一个未读记录
+            mailStatusMapper.insertStatus(mailId, userId, 0, 0, 0, null);
+        } else if (status.getIsRead() == 1) {
+            mailStatusMapper.markAsUnread(mailId, userId);
+        }
+        evictUserCache(userId);
+    }
+
+    @Override
+    @Transactional
+    public boolean toggleRead(Long mailId, Long userId) {
+        if (userId == null) {
+            System.err.println("[toggleRead] userId is null for mailId=" + mailId);
+            return false;
+        }
+        MailStatus status = mailStatusMapper.selectByMailIdAndUserId(mailId, userId);
+        if (status == null) {
+            // 无状态记录，视为未读 → 标记已读
+            mailStatusMapper.insertStatus(mailId, userId, 1, 0, 0, LocalDateTime.now());
+            evictUserCache(userId);
+            return true;
+        }
+        if (status.getIsRead() == 0) {
+            mailStatusMapper.markAsRead(mailId, userId);
+            evictUserCache(userId);
+            evictUnreadCache(userId);
+            return true;
+        } else {
+            mailStatusMapper.markAsUnread(mailId, userId);
+            evictUserCache(userId);
+            evictUnreadCache(userId);
+            return false;
         }
     }
 
@@ -625,6 +668,29 @@ public class MailServiceImpl implements MailService {
 
     private String cacheKey(Long userId, int type, int page, int pageSize) {
         return "mail:list:" + userId + ":" + type + ":" + page + ":" + pageSize;
+    }
+
+    /**
+     * 安全读取 Redis 缓存的 PageResult
+     * 处理 GenericJackson2JsonRedisSerializer 反序列化时的类型兼容问题：
+     * 旧缓存数据可能无法还原为 PageResult 类型，此时返回 null 降级查 DB
+     */
+    @SuppressWarnings("unchecked")
+    private PageResult<Mail> getCachedPageResult(String cacheKey) {
+        try {
+            Object obj = redisTemplate.opsForValue().get(cacheKey);
+            if (obj == null) return null;
+            if (obj instanceof PageResult) {
+                return (PageResult<Mail>) obj;
+            }
+            // 缓存数据损坏（LinkedHashMap 等），删除并降级
+            redisTemplate.delete(cacheKey);
+            return null;
+        } catch (Exception e) {
+            // 反序列化失败时删除损坏缓存
+            redisTemplate.delete(cacheKey);
+            return null;
+        }
     }
 
     private void evictUserCache(Long userId) {

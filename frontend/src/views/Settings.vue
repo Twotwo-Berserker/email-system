@@ -4,10 +4,11 @@
     <p class="settings-desc">启用或禁用邮件系统的AI智能插件功能</p>
 
     <div class="plugin-list" v-loading="loading">
+      <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false" style="margin-bottom: 16px" />
       <div v-for="plugin in plugins" :key="plugin.pluginName" class="plugin-card">
         <div class="plugin-info">
-          <div class="plugin-name">{{ getPluginLabel(plugin.pluginName) }}</div>
-          <div class="plugin-desc">{{ plugin.description }}</div>
+          <div class="plugin-name">{{ pluginLabels[plugin.pluginName] || plugin.pluginName }}</div>
+          <div class="plugin-desc">{{ pluginDescs[plugin.pluginName] || '插件功能描述' }}</div>
         </div>
         <div class="plugin-switch">
           <el-switch
@@ -47,7 +48,7 @@
       </el-form-item>
       <el-form-item>
         <el-button type="primary" :loading="llmSaving" @click="saveLlmConfig">保存配置</el-button>
-        <el-button @click="loadLlmConfig">重置</el-button>
+        <el-button :loading="llmResetting" @click="resetLlmConfig">重置</el-button>
       </el-form-item>
     </el-form>
 
@@ -87,8 +88,10 @@ import { ElMessage } from 'element-plus'
 
 const plugins = ref([])
 const loading = ref(false)
+const loadError = ref('')
 const toggling = ref(null)
 const llmSaving = ref(false)
+const llmResetting = ref(false)
 const dynamicPlugins = ref([])
 
 const pluginLabels = {
@@ -99,6 +102,14 @@ const pluginLabels = {
   categoryClassifier: '智能分类'
 }
 
+const pluginDescs = {
+  spamFilter: '基于关键词和规则引擎，实时检测垃圾邮件',
+  prioritySort: '多维度内容评分，自动置顶高优先级邮件',
+  linkDetection: 'URL分析和发件人校验，识别安全威胁',
+  summaryGenerator: '自动提取邮件摘要，异步处理不阻塞',
+  categoryClassifier: '智能归类为工作/个人/财务等8个类别'
+}
+
 const llmForm = reactive({
   apiEndpoint: 'https://api.openai.com/v1',
   apiKey: '',
@@ -106,35 +117,34 @@ const llmForm = reactive({
   enabled: false
 })
 
-function getPluginLabel(name) {
-  return pluginLabels[name] || name
-}
-
 onMounted(async () => {
+  loadError.value = ''
   loading.value = true
   try {
-    const [pluginRes] = await Promise.all([
-      listPlugins(),
-      loadLlmConfig(),
-      loadDynamicPlugins()
-    ])
-    plugins.value = pluginRes.data || []
+    const res = await listPlugins()
+    plugins.value = res.data || []
+  } catch (e) {
+    loadError.value = '插件列表加载失败，请检查后端服务是否正常运行'
+    plugins.value = []
   } finally {
     loading.value = false
   }
+  // 以下为可选加载，失败不影响主功能（silent模式不会弹窗）
+  loadLlmConfig()
+  loadDynamicPlugins()
 })
 
 async function handleToggle(name, enabled) {
   toggling.value = name
   try {
     await togglePlugin(name, enabled)
-    ElMessage.success(enabled ? `已启用「${getPluginLabel(name)}」` : `已禁用「${getPluginLabel(name)}」`)
+    ElMessage.success(enabled ? `已启用「${pluginLabels[name] || name}」` : `已禁用「${pluginLabels[name] || name}」`)
     const idx = plugins.value.findIndex(p => p.pluginName === name)
     if (idx > -1) {
       plugins.value[idx].enabled = enabled ? 1 : 0
     }
   } catch (e) {
-    // 错误已处理
+    ElMessage.error(`「${pluginLabels[name] || name}」操作失败，请稍后重试`)
   } finally {
     toggling.value = null
   }
@@ -151,12 +161,38 @@ async function loadLlmConfig() {
       llmForm.enabled = data.enabled === 1
     }
   } catch (e) {
-    // 忽略
+    // 静默忽略（页面初始化时使用）
   }
 }
 
-async function saveLlmConfig() {
+/**
+ * 重置按钮：从服务器重新加载已保存的 LLM 配置
+ * 撤销页面上未保存的修改，恢复到最后一次保存的状态
+ */
+async function resetLlmConfig() {
+  llmResetting.value = true
+  try {
+    const res = await getLlmConfig()
+    const data = res.data
+    if (data) {
+      llmForm.apiEndpoint = data.apiEndpoint || 'https://api.openai.com/v1'
+      llmForm.apiKey = data.apiKey || ''
+      llmForm.modelName = data.modelName || 'gpt-3.5-turbo'
+      llmForm.enabled = data.enabled === 1
+    }
+    ElMessage.success('已重置为服务器保存的配置')
+  } catch (e) {
+    ElMessage.error('重置失败，请检查后端服务')
+  } finally {
+    llmResetting.value = false
+  }
+}
+
+async function saveLlmConfig(newEnabled) {
   llmSaving.value = true
+  // newEnabled 来自 switch @change 事件，保存前旧值（用于失败还原）
+  const shouldRestore = newEnabled !== undefined
+  const oldEnabled = shouldRestore ? !newEnabled : llmForm.enabled
   try {
     await updateLlmConfig({
       apiEndpoint: llmForm.apiEndpoint,
@@ -166,7 +202,11 @@ async function saveLlmConfig() {
     })
     ElMessage.success('LLM配置已保存')
   } catch (e) {
-    // 错误已处理
+    // 保存失败时还原开关状态
+    if (shouldRestore) {
+      llmForm.enabled = oldEnabled
+    }
+    ElMessage.error('LLM配置保存失败，请稍后重试')
   } finally {
     llmSaving.value = false
   }

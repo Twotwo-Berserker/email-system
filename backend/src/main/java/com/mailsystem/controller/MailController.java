@@ -106,6 +106,37 @@ public class MailController {
     }
 
     /**
+     * 标记未读
+     * PUT /mail/unread/{id}
+     */
+    @PutMapping("/unread/{id}")
+    public ApiResponse<Void> unread(HttpServletRequest request, @PathVariable Long id) {
+        Long userId = getUserId(request);
+        mailService.markAsUnread(id, userId);
+        return ApiResponse.ok("已标记为未读", null);
+    }
+
+    /**
+     * 切换已读/未读状态
+     * PUT /mail/toggle-read/{id}
+     */
+    @PutMapping("/toggle-read/{id}")
+    public ApiResponse<Boolean> toggleRead(HttpServletRequest request, @PathVariable Long id) {
+        Long userId = getUserId(request);
+        boolean isRead = mailService.toggleRead(id, userId);
+        return ApiResponse.ok(isRead ? "已标记为已读" : "已标记为未读", isRead);
+    }
+
+    /** 从请求中安全提取 userId */
+    private Long getUserId(HttpServletRequest request) {
+        Object uid = request.getAttribute("userId");
+        if (uid instanceof Long) return (Long) uid;
+        if (uid instanceof Integer) return ((Integer) uid).longValue();
+        if (uid != null) return Long.valueOf(uid.toString());
+        return null;
+    }
+
+    /**
      * 删除邮件（软删除）
      * DELETE /mail/delete/{id}
      */

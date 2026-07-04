@@ -49,6 +49,16 @@ public interface MailService {
     void markAsRead(Long mailId, Long userId);
 
     /**
+     * 标记未读
+     */
+    void markAsUnread(Long mailId, Long userId);
+
+    /**
+     * 切换已读/未读状态，返回切换后的状态 (true=已读, false=未读)
+     */
+    boolean toggleRead(Long mailId, Long userId);
+
+    /**
      * 删除邮件（软删除）
      */
     void deleteMail(Long mailId, Long userId);

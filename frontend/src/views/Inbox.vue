@@ -46,6 +46,16 @@
               @change="(val) => toggleSelect(mail.id, val)"
               @click.stop
             />
+            <el-button
+              text
+              class="read-toggle-btn"
+              :title="isMailRead(mail) ? '标记为未读' : '标记为已读'"
+              @click.stop="handleToggleRead(mail)"
+            >
+              <el-icon :size="18" :color="isMailRead(mail) ? '#909399' : '#409eff'">
+                <component :is="isMailRead(mail) ? 'Message' : 'Reading'" />
+              </el-icon>
+            </el-button>
             <span class="mail-sender">{{ mail.senderEmail }}</span>
           </div>
           <div class="mail-item-center">
@@ -86,10 +96,10 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { listMails, deleteMail as apiDelete, searchMails, batchDeleteMail } from '@/api/mail'
+import { listMails, deleteMail as apiDelete, searchMails, batchDeleteMail, toggleMailRead } from '@/api/mail'
 import { formatTime, truncateSummary } from '@/utils'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search } from '@element-plus/icons-vue'
+import { Search, Message, Reading } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const mails = ref([])
@@ -149,6 +159,17 @@ function openMail(mail) {
 
 function isMailRead(mail) {
   return mail.isRead === 1
+}
+
+async function handleToggleRead(mail) {
+  try {
+    const res = await toggleMailRead(mail.id)
+    const isRead = res.data
+    mail.isRead = isRead ? 1 : 0
+    ElMessage.success(isRead ? '已标记为已读' : '已标记为未读')
+  } catch (e) {
+    // 错误在拦截器中已处理
+  }
 }
 
 function toggleSelect(id, val) {
@@ -238,6 +259,11 @@ async function handleDelete(mail) {
   align-items: center;
   gap: 8px;
   min-width: 200px;
+}
+
+.read-toggle-btn {
+  padding: 2px;
+  min-width: auto;
 }
 
 .mail-sender {

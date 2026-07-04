@@ -15,6 +15,9 @@
         <el-button v-if="isFromTrash" type="success" :loading="restoring" @click="handleRestore">
           <el-icon><Upload /></el-icon> 恢复
         </el-button>
+        <el-button @click="handleToggleRead" :loading="togglingRead">
+          <el-icon><Reading /></el-icon> {{ mail.isRead ? '标记未读' : '标记已读' }}
+        </el-button>
         <el-button type="danger" @click="handleDelete">
           <el-icon><Delete /></el-icon> 删除
         </el-button>
@@ -93,10 +96,10 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getFileIcon } from '@/utils'
-import { mailDetail, mailAttachments, markAsRead, deleteMail, restoreMail } from '@/api/mail'
+import { mailDetail, mailAttachments, markAsRead, toggleMailRead, deleteMail, restoreMail } from '@/api/mail'
 import { downloadAttachment, previewAttachment } from '@/api/attachment'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, ChatDotRound, Upload, Share } from '@element-plus/icons-vue'
+import { ArrowLeft, ChatDotRound, Upload, Share, Reading } from '@element-plus/icons-vue'
 import { useMailActions } from '@/composables/useMailActions'
 import { useLocalCache } from '@/composables/useLocalCache'
 import { useUserStore } from '@/stores/user'
@@ -111,6 +114,7 @@ const mail = ref(null)
 const attachments = ref([])
 const loading = ref(true)
 const restoring = ref(false)
+const togglingRead = ref(false)
 
 const isFromTrash = computed(() => route.query.from === 'trash')
 
@@ -156,6 +160,22 @@ function handleForward() {
       forwardId: mail.value.id
     }
   })
+}
+
+async function handleToggleRead() {
+  togglingRead.value = true
+  try {
+    const res = await toggleMailRead(mail.value.id)
+    mail.value.isRead = res.data ? 1 : 0
+    ElMessage.success(res.data ? '已标记为已读' : '已标记为未读')
+    if (userStore.userInfo?.id) {
+      invalidateMailCache(userStore.userInfo.id)
+    }
+  } catch (e) {
+    ElMessage.error('操作失败')
+  } finally {
+    togglingRead.value = false
+  }
 }
 
 async function handleRestore() {

@@ -27,7 +27,9 @@ request.interceptors.response.use(
     }
     const res = response.data
     if (res.code !== 200) {
-      ElMessage.error(res.message || '请求失败')
+      if (!response.config.silent) {
+        ElMessage.error(res.message || '请求失败')
+      }
       return Promise.reject(new Error(res.message))
     }
     return res
@@ -35,15 +37,16 @@ request.interceptors.response.use(
   error => {
     if (error.response) {
       const { status, data } = error.response
+      // 401 始终处理：清除登录态并跳转
       if (status === 401) {
         localStorage.removeItem('token')
         localStorage.removeItem('userInfo')
         ElMessage.error('登录已过期，请重新登录')
         window.location.href = '/login'
-      } else {
+      } else if (!error.config?.silent) {
         ElMessage.error(data?.message || '服务器异常')
       }
-    } else {
+    } else if (!error.config?.silent) {
       ElMessage.error('网络连接异常')
     }
     return Promise.reject(error)

@@ -51,6 +51,20 @@ export function markAsRead(id) {
 }
 
 /**
+ * 标记未读
+ */
+export function markAsUnread(id) {
+  return request.put(`/mail/unread/${id}`)
+}
+
+/**
+ * 切换已读/未读状态
+ */
+export function toggleMailRead(id) {
+  return request.put(`/mail/toggle-read/${id}`)
+}
+
+/**
  * 删除邮件
  */
 export function deleteMail(id) {
