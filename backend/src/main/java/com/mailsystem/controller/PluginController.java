@@ -2,13 +2,10 @@ package com.mailsystem.controller;
 
 import com.mailsystem.dto.ApiResponse;
 import com.mailsystem.entity.PluginConfig;
-import com.mailsystem.plugin.dynamic.DynamicPluginLoader;
 import com.mailsystem.service.PluginService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 
-import java.io.File;
 import java.util.*;
 
 /**
@@ -20,9 +17,6 @@ public class PluginController {
 
     @Autowired
     private PluginService pluginService;
-
-    @Autowired
-    private DynamicPluginLoader dynamicPluginLoader;
 
     /**
      * 获取所有插件列表及状态
@@ -48,66 +42,6 @@ public class PluginController {
         }
         PluginConfig config = pluginService.togglePlugin(pluginName, enabled);
         return ApiResponse.ok(enabled ? "插件已启用" : "插件已禁用", config);
-    }
-
-    // ==================== 动态JAR插件管理 ====================
-
-    /**
-     * 上传并加载JAR插件
-     * POST /plugin/load
-     */
-    @PostMapping("/load")
-    public ApiResponse<Map<String, Object>> loadPlugin(@RequestParam("file") MultipartFile file) {
-        try {
-            // 确保插件目录存在
-            File pluginDir = new File("./plugins/");
-            if (!pluginDir.exists()) {
-                pluginDir.mkdirs();
-            }
-
-            // 保存JAR文件
-            String fileName = file.getOriginalFilename();
-            if (fileName == null || !fileName.endsWith(".jar")) {
-                return ApiResponse.error("只支持JAR格式的插件文件");
-            }
-            File jarFile = new File(pluginDir, fileName);
-            file.transferTo(jarFile);
-
-            // 加载插件
-            var plugin = dynamicPluginLoader.loadJar(jarFile);
-            if (plugin != null) {
-                Map<String, Object> result = new HashMap<>();
-                result.put("name", plugin.getName());
-                result.put("fileName", fileName);
-                return ApiResponse.ok("插件加载成功", result);
-            } else {
-                return ApiResponse.error("JAR文件中未找到有效的插件实现");
-            }
-        } catch (Exception e) {
-            return ApiResponse.error("插件加载失败: " + e.getMessage());
-        }
-    }
-
-    /**
-     * 卸载动态插件
-     * DELETE /plugin/unload/{name}
-     */
-    @DeleteMapping("/unload/{name}")
-    public ApiResponse<Void> unloadPlugin(@PathVariable String name) {
-        boolean success = dynamicPluginLoader.unloadPlugin(name);
-        if (success) {
-            return ApiResponse.ok("插件已卸载", null);
-        }
-        return ApiResponse.error("插件不存在");
-    }
-
-    /**
-     * 列出已加载的动态插件
-     * GET /plugin/dynamic/list
-     */
-    @GetMapping("/dynamic/list")
-    public ApiResponse<List<String>> listDynamicPlugins() {
-        return ApiResponse.ok(dynamicPluginLoader.listLoadedPlugins());
     }
 
     // ==================== LLM大模型配置 ====================

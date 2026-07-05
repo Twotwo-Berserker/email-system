@@ -111,11 +111,12 @@ mail-system/
 │   ├── vite.config.js
 │   └── src/
 │       ├── api/                     # API 封装
-│       ├── components/              # 可复用组件
+│       ├── composables/             # 组合式函数（缓存、WebSocket、邮件操作）
+│       ├── utils/                   # 工具函数
 │       ├── views/                   # 页面视图
-│       ├── router/                  # 路由
+│       ├── router/                  # 路由配置
 │       ├── stores/                  # Pinia 状态管理
-│       └── layouts/                 # 布局
+│       └── layouts/                 # 布局组件
 ├── deploy/                          # 部署配置
 │   ├── nginx/
 │   │   ├── Dockerfile               # Nginx 反向代理镜像
@@ -126,7 +127,9 @@ mail-system/
 │   ├── minio/
 │   │   └── init.sh                  # MinIO 存储桶初始化脚本
 │   └── mysql/
-│       └── init.sql                 # 数据库建库脚本
+│       ├── init.sql                 # 数据库建库脚本
+│       ├── migration_v2.sql         # v2 升级迁移（新增时间追踪、LLM配置表）
+│       └── clear_data.sql           # 清空用户/邮件数据
 ├── doc/API.md                       # 接口文档
 ├── docker-compose.yml               # Docker Compose 编排文件
 ├── .env.example                     # 环境变量模板
@@ -212,12 +215,10 @@ minio:
 - ✅ **垃圾邮件识别** — 关键词匹配 + 规则引擎
 - ✅ **邮件优先级排序** — 多维度内容评分
 - ✅ **恶意链接/伪造发件人检测** — URL 分析 + 发件人校验
-- ✅ **智能摘要生成** — 异步 HTML 清洗 + 截取
+- ✅ **智能摘要生成** — 规则提取 + LLM 增强，异步处理不阻塞
 - ✅ **智能分类** — 关键词自动归类（工作/个人/财务等 8 类）
-- ✅ **LLM 大模型集成** — 支持 OpenAI 兼容 API，自动摘要/情感分析
-- ✅ 可插拔架构 — 统一 `PluginInterface` 接口
-- ✅ **动态 JAR 插件加载** — `URLClassLoader` 运行时加载外部插件
-- ✅ 开关控制 — 前端设置页一键启用/禁用
+- ✅ **LLM 大模型集成** — 支持 OpenAI / DeepSeek 等兼容接口，智能摘要生成
+- ✅ 可插拔架构 — 统一 `PluginInterface` 接口，前端一键启用/禁用
 
 ### 通信协议
 - ✅ HTTP REST API（标准模式）
@@ -251,6 +252,8 @@ minio:
 | `mail_status` | 邮件状态表（已读、删除、同步状态、时间追踪） |
 | `plugin_config` | 插件配置表（开关状态） |
 | `llm_config` | LLM大模型配置表（API端点、密钥、模型名） |
+
+> 首次部署时 `init.sql` 自动建表并写入默认配置。若已有 v1 数据库，`migration_v2.sql` 增量添加时间追踪列和 `llm_config` 表。
 
 ---
 

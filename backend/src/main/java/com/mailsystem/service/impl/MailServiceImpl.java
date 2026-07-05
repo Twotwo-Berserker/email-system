@@ -14,7 +14,6 @@ import com.mailsystem.mapper.MailMapper;
 import com.mailsystem.mapper.MailStatusMapper;
 import com.mailsystem.mapper.UserMapper;
 import com.mailsystem.plugin.PluginInterface;
-import com.mailsystem.plugin.dynamic.DynamicPluginRegistry;
 import com.mailsystem.service.MailService;
 import com.mailsystem.websocket.MailNotificationService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,10 +50,6 @@ public class MailServiceImpl implements MailService {
     /** 注入所有编译时插件实现 */
     @Autowired(required = false)
     private List<PluginInterface> plugins;
-
-    /** 动态插件注册中心 */
-    @Autowired
-    private DynamicPluginRegistry dynamicPluginRegistry;
 
     /** WebSocket 实时推送 */
     @Autowired(required = false)
@@ -639,7 +634,6 @@ public class MailServiceImpl implements MailService {
     }
 
     private void executePlugins(Mail mail) {
-        // 编译时插件
         if (plugins != null && !plugins.isEmpty()) {
             for (PluginInterface plugin : plugins) {
                 try {
@@ -649,17 +643,6 @@ public class MailServiceImpl implements MailService {
                 } catch (Exception e) {
                     System.err.println("插件 [" + plugin.getName() + "] 执行异常: " + e.getMessage());
                 }
-            }
-        }
-        // 动态加载的插件
-        List<PluginInterface> dynamicPlugins = dynamicPluginRegistry.getAllPlugins();
-        for (PluginInterface plugin : dynamicPlugins) {
-            try {
-                if (plugin.isEnabled()) {
-                    plugin.process(mail);
-                }
-            } catch (Exception e) {
-                System.err.println("动态插件 [" + plugin.getName() + "] 执行异常: " + e.getMessage());
             }
         }
     }

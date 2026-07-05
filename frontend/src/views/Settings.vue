@@ -25,7 +25,7 @@
     <!-- LLM 大模型配置 -->
     <el-divider />
     <h2>🤖 LLM 大模型设置</h2>
-    <p class="settings-desc">配置大语言模型API以实现更智能的邮件分析（支持OpenAI兼容接口）</p>
+    <p class="settings-desc">配置大语言模型API以实现更智能的邮件分析（OpenAI / DeepSeek / Anthropic 等）</p>
 
     <el-form :model="llmForm" label-width="120px" class="llm-form">
       <el-form-item label="启用大模型">
@@ -52,38 +52,12 @@
       </el-form-item>
     </el-form>
 
-    <!-- 动态插件管理 -->
-    <el-divider />
-    <h2>🔌 动态插件管理</h2>
-    <p class="settings-desc">上传外部JAR插件，扩展邮件系统功能</p>
-
-    <el-upload
-      :auto-upload="false"
-      :limit="1"
-      accept=".jar"
-      :on-change="handleJarUpload"
-    >
-      <el-button type="primary" plain>
-        <el-icon><Upload /></el-icon> 上传JAR插件
-      </el-button>
-      <template #tip>
-        <span class="upload-tip">仅支持实现了PluginInterface接口的JAR文件</span>
-      </template>
-    </el-upload>
-
-    <div v-if="dynamicPlugins.length > 0" class="dynamic-list">
-      <h4>已加载的动态插件 ({{ dynamicPlugins.length }})</h4>
-      <div v-for="name in dynamicPlugins" :key="name" class="dynamic-item">
-        <span>{{ name }}</span>
-        <el-button text type="danger" size="small" @click="handleUnloadPlugin(name)">卸载</el-button>
-      </div>
-    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { listPlugins, togglePlugin, getLlmConfig, updateLlmConfig, uploadJarPlugin, unloadPlugin, listDynamicPlugins } from '@/api/plugin'
+import { listPlugins, togglePlugin, getLlmConfig, updateLlmConfig } from '@/api/plugin'
 import { ElMessage } from 'element-plus'
 
 const plugins = ref([])
@@ -92,7 +66,6 @@ const loadError = ref('')
 const toggling = ref(null)
 const llmSaving = ref(false)
 const llmResetting = ref(false)
-const dynamicPlugins = ref([])
 
 const pluginLabels = {
   spamFilter: '垃圾邮件识别',
@@ -131,7 +104,6 @@ onMounted(async () => {
   }
   // 以下为可选加载，失败不影响主功能（silent模式不会弹窗）
   loadLlmConfig()
-  loadDynamicPlugins()
 })
 
 async function handleToggle(name, enabled) {
@@ -212,34 +184,6 @@ async function saveLlmConfig(newEnabled) {
   }
 }
 
-async function handleJarUpload(file) {
-  try {
-    await uploadJarPlugin(file.raw)
-    ElMessage.success('JAR插件加载成功')
-    loadDynamicPlugins()
-  } catch (e) {
-    ElMessage.error('插件加载失败')
-  }
-}
-
-async function handleUnloadPlugin(name) {
-  try {
-    await unloadPlugin(name)
-    ElMessage.success('插件已卸载')
-    loadDynamicPlugins()
-  } catch (e) {
-    ElMessage.error('卸载失败')
-  }
-}
-
-async function loadDynamicPlugins() {
-  try {
-    const res = await listDynamicPlugins()
-    dynamicPlugins.value = res.data || []
-  } catch (e) {
-    // 忽略
-  }
-}
 </script>
 
 <style scoped>
@@ -283,23 +227,4 @@ async function loadDynamicPlugins() {
   margin-top: 12px;
 }
 
-.upload-tip {
-  font-size: 12px;
-  color: #909399;
-  margin-left: 8px;
-}
-
-.dynamic-list {
-  margin-top: 16px;
-}
-
-.dynamic-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 12px;
-  background: #f5f7fa;
-  border-radius: 6px;
-  margin-bottom: 8px;
-}
 </style>

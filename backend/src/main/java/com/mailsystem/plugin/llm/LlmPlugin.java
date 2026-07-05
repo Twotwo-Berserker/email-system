@@ -14,9 +14,8 @@ import java.util.*;
 /**
  * LLM大模型插件 — 调用第三方AI API进行智能分析
  * 支持两种 API 格式：
- *   - OpenAI Chat Completions（/v1/chat/completions）
- *   - Anthropic Messages（/v1/messages）
- * 根据端点 URL 自动检测：路径含 "anthropic" 则用 Anthropic 格式
+ *   - OpenAI Chat Completions（/v1/chat/completions）— 默认，适用于 OpenAI、DeepSeek 等
+ *   - Anthropic Messages（/v1/messages）— 仅当主机名为 *.anthropic.com 时使用
  * <p>
  * 配置来源：从 llm_config 数据库表读取（由前端 Settings 页面管理）
  * </p>
@@ -98,8 +97,20 @@ public class LlmPlugin implements PluginInterface {
 
     // ==================== API 格式检测 ====================
 
+    /**
+     * 判断是否为 Anthropic Messages API 端点
+     * 只有当主机名明确是 api.anthropic.com 时才使用 Anthropic 格式
+     * DeepSeek、OpenAI 等提供商均使用 OpenAI Chat Completions 兼容格式
+     */
     private boolean isAnthropicEndpoint(String endpoint) {
-        return endpoint != null && endpoint.toLowerCase().contains("anthropic");
+        if (endpoint == null) return false;
+        try {
+            String host = new java.net.URL(endpoint).getHost();
+            return host != null && host.endsWith("anthropic.com");
+        } catch (Exception e) {
+            // URL 解析失败，回退到检查路径中的 "anthropic" 关键字
+            return endpoint.toLowerCase().contains("anthropic");
+        }
     }
 
     // ==================== OpenAI Chat Completions API ====================

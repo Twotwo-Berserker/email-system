@@ -443,33 +443,6 @@ PUT /plugin/llm/configure
 
 ---
 
-## 18. 动态JAR插件管理
-
-**上传并加载JAR插件:**
-
-```
-POST /plugin/load
-Content-Type: multipart/form-data
-```
-
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| file | File | 是 | JAR插件文件 |
-
-**卸载动态插件:**
-
-```
-DELETE /plugin/unload/{name}
-```
-
-**列出已加载的动态插件:**
-
-```
-GET /plugin/dynamic/list
-```
-
----
-
 ## 分页说明
 
 邮件列表接口 (`/mail/list`, `/mail/search`) 支持分页参数:
