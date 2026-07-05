@@ -31,6 +31,15 @@ docker-compose ps
 docker-compose logs -f
 ```
 
+## 关闭环境
+
+```bash
+# 停止基础设施（数据卷保留）
+docker-compose down
+
+# 停止并删除数据卷（完全重置）
+docker-compose down -v
+
 ### 访问地址
 
 | 服务 | 地址 | 说明 |
