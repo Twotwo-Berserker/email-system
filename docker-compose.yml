@@ -1,6 +1,6 @@
 # ============================================================
 # 邮件系统 — Docker Compose 编排文件
-# 服务组件: Nginx + Frontend + Backend + MySQL + Redis + MinIO
+# 服务组件: Nginx + Frontend + Backend + MySQL + Redis + MinIO + Proxy
 # 启动方式: docker-compose up -d
 # 前置条件: 复制 .env.example 为 .env 并修改配置
 # ============================================================
@@ -100,8 +100,49 @@ services:
       # JWT 配置
       - JWT_SECRET=${JWT_SECRET:-mail-system-2026-secret-key-for-jwt-token-generation}
       - JWT_EXPIRATION=${JWT_EXPIRATION:-86400000}
+      # 凭据加密密钥（AES-256-GCM）—— 加密邮箱授权码与 LLM API Key
+      # 未设置时后端会拒绝启动（刻意如此，避免"默认密钥"等价于不加密）
+      - AES_SECRET_KEY=${AES_SECRET_KEY}
+      # 管理员种子账号（由 AdminSeeder 幂等创建，首次登录强制改密）
+      - ADMIN_INIT_EMAIL=${ADMIN_INIT_EMAIL:-admin@local}
+      - ADMIN_INIT_PASSWORD=${ADMIN_INIT_PASSWORD}
+      # IMAP 收信轮询
+      - IMAP_INITIAL_DELAY_MS=${IMAP_INITIAL_DELAY_MS:-30000}
+      - IMAP_SYNC_INTERVAL_MS=${IMAP_SYNC_INTERVAL_MS:-180000}
+      - IMAP_FETCH_DAYS=${IMAP_FETCH_DAYS:-7}
+      - IMAP_MAX_FETCH_PER_RUN=${IMAP_MAX_FETCH_PER_RUN:-200}
+      # 网易系邮箱要求客户端发送 IMAP ID 命令，关闭会导致 163/126 报 Unsafe Login
+      - IMAP_SEND_CLIENT_ID=${IMAP_SEND_CLIENT_ID:-true}
+      # 一键绑定时的连通性探测超时
+      - PROBE_CONNECT_TIMEOUT_MS=${PROBE_CONNECT_TIMEOUT_MS:-4000}
+      - PROBE_READ_TIMEOUT_MS=${PROBE_READ_TIMEOUT_MS:-6000}
+      # LLM 调用超时与限流
+      - LLM_CONNECT_TIMEOUT_MS=${LLM_CONNECT_TIMEOUT_MS:-5000}
+      - LLM_READ_TIMEOUT_MS=${LLM_READ_TIMEOUT_MS:-12000}
+      - LLM_RATE_LIMIT_PER_MINUTE=${LLM_RATE_LIMIT_PER_MINUTE:-20}
+      - LLM_CIRCUIT_BREAKER_THRESHOLD=${LLM_CIRCUIT_BREAKER_THRESHOLD:-5}
+      - LLM_CIRCUIT_BREAKER_OPEN_SECONDS=${LLM_CIRCUIT_BREAKER_OPEN_SECONDS:-60}
+      # 邮件分析上下文裁剪
+      - ANALYSIS_MAX_CONTENT_CHARS=${ANALYSIS_MAX_CONTENT_CHARS:-3000}
       # 文件上传限制
       - FILE_UPLOAD_MAX_SIZE=${FILE_UPLOAD_MAX_SIZE:-52428800}
+      # ---- 本域邮箱：收信（Cloudflare Email Routing）----
+      # 不配置时本域邮箱入口不显示，绑定外部邮箱的既有功能完全不受影响。
+      # 部署步骤见 deploy/cloudflare/README.md
+      - INBOUND_ENABLED=${INBOUND_ENABLED:-false}
+      - INBOUND_SHARED_SECRET=${INBOUND_SHARED_SECRET:-}
+      - INBOUND_DOMAINS=${INBOUND_DOMAINS:-}
+      - INBOUND_MAX_MESSAGE_BYTES=${INBOUND_MAX_MESSAGE_BYTES:-26214400}
+      # ---- 本域邮箱：发信（项目级中继）----
+      # Cloudflare 只负责收信；本域地址要能发信必须配一条中继。
+      # 用的是项目自己的凭据，不是用户外部邮箱的授权码
+      - OUTBOUND_TRANSPORT=${OUTBOUND_TRANSPORT:-none}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - RELAY_SMTP_HOST=${RELAY_SMTP_HOST:-}
+      - RELAY_SMTP_PORT=${RELAY_SMTP_PORT:-587}
+      - RELAY_SMTP_SSL=${RELAY_SMTP_SSL:-0}
+      - RELAY_SMTP_USERNAME=${RELAY_SMTP_USERNAME:-}
+      - RELAY_SMTP_PASSWORD=${RELAY_SMTP_PASSWORD:-}
     depends_on:
       mysql:
         condition: service_healthy
@@ -245,3 +286,36 @@ services:
       - mail-network
     # 此服务仅初始化一次，不需要重启策略
     restart: "no"
+
+  # ==========================================================
+  # 8. SMTP / IMAP 协议代理 — 给传统邮件客户端用
+  #
+  # 让 Thunderbird、Outlook、手机邮件 App 能直接收发本系统的邮件。
+  # 它没有数据库、没有自己的用户体系：登录用的是本系统账号密码（换 JWT），
+  # 权限判断全部由后端完成。用法见 proxy/README.md
+  #
+  # 不需要时可以整段删掉，其余服务不受影响。
+  # ==========================================================
+  proxy:
+    build:
+      context: ./proxy
+      dockerfile: Dockerfile
+    image: mail-system-proxy:1.0.0
+    container_name: mail-proxy
+    ports:
+      # 143 / 2525 都是非特权端口，容器内也不需要 root
+      - "${IMAP_PORT:-143}:143"
+      - "${SMTP_PORT:-2525}:2525"
+    environment:
+      # 走容器网络里的服务名，不是 localhost —— proxy 是独立容器
+      - BACKEND_URL=http://backend:8080
+      - PROXY_HOST=${PROXY_HOST:-0.0.0.0}
+      - IMAP_PORT=143
+      - SMTP_PORT=2525
+      - PROXY_VERBOSE=${PROXY_VERBOSE:-false}
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - mail-network
+    restart: unless-stopped

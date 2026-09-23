@@ -222,6 +222,21 @@ GET /mail/detail/{id}
 
 ---
 
+## 6.1 原始报文（RFC822）
+
+```
+GET /mail/detail/{id}/raw
+```
+
+返回这封邮件重建后的完整 MIME 报文（`Content-Type: message/rfc822`），
+正文与附件都在其中。供 SMTP/IMAP 协议代理使用 —— 邮件客户端抓信时需要整封报文。
+
+> 与 `/mail/detail/{id}` 的区别：详情接口会**自动标记已读**，这个不会。
+> 客户端同步时会批量抓取报文，若在这里标记已读，整个邮箱会在用户打开任何一封
+> 邮件之前就变成已读。
+
+---
+
 ## 7. 标记已读
 
 ```
@@ -440,6 +455,186 @@ PUT /plugin/llm/configure
 | apiKey | String | 否 | API密钥 |
 | modelName | String | 否 | 模型名称 |
 | enabled | Boolean | 否 | 是否启用 |
+
+---
+
+## 18. 邮箱账户
+
+「邮箱账户」页的全部接口。账户有**两种类型**，由响应里的 `cloudflareRouting` 区分
+（**不要**用 `smtpHost` 是否为空来判断）：
+
+| `cloudflareRouting` | 类型 | 含义 |
+|---|---|---|
+| `false` | 绑定的外部邮箱 | 有 SMTP/IMAP 服务器与授权码，需要「测试连接」与定时收信 |
+| `true` | 本域地址 | 没有服务器也没有授权码，收信由 Cloudflare 推送，发信走项目级中继 |
+
+### 18.1 我的账户列表
+
+```
+GET /mail-account/list
+```
+
+**响应 `data` 元素字段：**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | Long | 账户 ID |
+| emailAddress | String | 邮箱地址（本域地址即领到的那个） |
+| displayName | String | 显示名，收件人看到的发件人名称 |
+| providerType | String | `IMAP_SMTP` / `CLOUDFLARE` |
+| cloudflareRouting | Boolean | 是否为本域地址，前端据此切换卡片形态 |
+| smtpHost / smtpPort / smtpSsl / smtpUsername | | 发信服务器（本域地址为 null） |
+| hasSmtpPassword / hasImapPassword | Boolean | **授权码是否已保存，不回传明文** |
+| imapHost / imapPort / imapSsl / imapUsername | | 收信服务器（本域地址为 null） |
+| enabled | Integer | 1=启用, 0=停用 |
+| lastSyncTime / lastSyncStatus / lastSyncError | | 最近一次收信的时间、状态与失败原因 |
+| syncedCount | Integer | 本次新增邮件数（仅 `/sync` 响应里有值） |
+
+### 18.2 识别邮箱服务商
+
+```
+GET /mail-account/detect?email=xxx@qq.com&mx=false
+```
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| email | String | 是 | 邮箱地址 |
+| mx | Boolean | 否 | 是否允许 MX 记录反查（要做 DNS 查询，最长数秒），默认 false |
+
+返回识别结果（`recognized` / `providerName` / 候选服务器列表 `smtpCandidates`
+与 `imapCandidates` / 授权码获取指引 `guideUrl` 与 `guideSteps` 等）。
+**只需邮箱地址，不需要授权码** —— 用于用户边打字边看到提示。
+
+### 18.3 一键绑定（需要授权码）
+
+```
+POST /mail-account/quick-bind
+```
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| emailAddress | String | 是 | 邮箱地址 |
+| password | String | 是 | 授权码，不是登录密码 |
+| displayName | String | 否 | 显示名 |
+| receiveEnabled | Boolean | 否 | 是否同时收信（关闭则只用它对外发信） |
+
+服务端会自动识别服务器地址并**真实连接探测**，只有连得通的一侧才会落库。
+
+**响应 `data`：**
+
+```json
+{
+  "account": { "id": 3, "emailAddress": "me@qq.com", "cloudflareRouting": false },
+  "smtpOk": true,
+  "smtpMessage": "连接成功",
+  "imapOk": true,
+  "imapMessage": "连接成功",
+  "notices": []
+}
+```
+
+> `notices` 非空时是「绑定成功了，但有几句话要说」（如授权码里含空格、
+> 仅一侧连通）。**失败时的 `message` 是多行操作指引，需以弹窗完整展示。**
+
+### 18.4 本域邮箱的能力说明
+
+```
+GET /mail-account/capabilities
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| inboundEnabled | Boolean | 本实例是否开启了入站接收。为 false 时整个「领取本域地址」入口不该显示 |
+| domains | String[] | 可领取的域名列表 |
+| outboundTransport | String | 发信中继的通道名：`resend` / `smtp` / `none` |
+| outboundAvailable | Boolean | 发信中继是否就绪。为 false 时本域地址只能收信 |
+| message | String | 给用户看的一句话说明，由后端生成 |
+
+> **为什么收与发要分开说明**：它们是两条独立配置的链路（Cloudflare 负责收，
+> 中继负责发）。只配了前者时，本域地址是「能收不能发」的 —— 这是一个合理且常见的
+> 状态，不该被笼统地报成「功能不可用」。
+
+### 18.5 领取本域地址（无需授权码）
+
+```
+POST /mail-account/inbound
+```
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| address | String | 是 | 完整地址（`alice@mail.example.com`）或只填用户名（`alice`，服务端补默认域名） |
+| displayName | String | 否 | 显示名 |
+
+**没有授权码字段。** 这条路径不登录任何外部邮箱，因此不存在授权码 —— 详见
+[Cloudflare.md](../Cloudflare.md)。
+
+用户名只允许小写字母、数字与 `. _ + -`，不能以符号开头或结尾。
+地址已被占用时返回明确报错。
+
+**响应 `data`：** 同 18.1 的元素结构，`cloudflareRouting` 为 `true`。
+
+### 18.6 手动配置 / 修改账户
+
+```
+POST /mail-account           # 手动配置新账户（需自行填写服务器地址）
+PUT  /mail-account/{id}      # 修改
+```
+
+请求体同 18.1 的字段（授权码字段为**明文入参**，落库前 AES 加密）。
+两个授权码字段**留空或回传掩码表示不修改**。修改本域地址时只需提交
+`emailAddress` + `displayName` + `enabled` 三项。
+
+> 改了邮箱地址或 IMAP 服务器/登录名会重置收信水位线（那是另一个信箱了，
+> UID 空间完全不同）；只换授权码不会。
+
+### 18.7 测试连接 / 立即收信 / 解绑
+
+```
+POST   /mail-account/{id}/test      # 分别测 SMTP 与 IMAP，任一侧失败不影响另一侧
+POST   /mail-account/{id}/sync      # 阻塞到本轮结束，响应里带 syncedCount
+DELETE /mail-account/{id}           # 解绑
+```
+
+> 这三个接口只对 `cloudflareRouting = false` 的账户有意义 —— 本域地址没有服务器
+> 可测，收信也不是轮询而是被推送，前端会隐藏这些按钮。
+
+---
+
+## 19. 入站接收（Cloudflare Worker 回调）
+
+```
+POST /inbound/cloudflare
+```
+
+**这是给 Cloudflare Email Worker 调用的接口，不是给前端调用的。**
+它需要 HMAC-SHA256 签名而不是 JWT：
+
+| 请求头 | 说明 |
+|--------|------|
+| `X-Inbound-Timestamp` | Unix 秒级时间戳，超出 5 分钟窗口即拒绝 |
+| `X-Inbound-Signature` | `v1=` + `HMAC-SHA256(共享密钥, timestamp + "." + 请求体原始字节)` 的十六进制小写 |
+
+请求体为 `{from, to, receivedAt, raw}`（`raw` 是 base64 编码的原始报文）。
+
+**响应**：业务结果一律用 HTTP 200 + `data.status` 表达，让 Worker 能读到具体
+原因并据此区分「该退信」还是「该重试」：
+
+| `data.status` | 含义 | Worker 的动作 |
+|---|---|---|
+| `DELIVERED` | 已入库，`data.mailId` 是站内邮件 ID | 视为成功 |
+| `DUPLICATE` | 这封信已存在（按 `Message-ID` 去重），未重复入库 | 视为成功 |
+| `UNKNOWN_RECIPIENT` | 没有这个收件地址 | **退信**给发件人 |
+| `DISABLED` | 收件地址已停用 | **退信**给发件人 |
+
+HTTP 层面的状态码语义不同 —— 它们表达的是「这次调用本身出了什么问题」：
+签名不一致 401、请求体畸形或 `raw` 非 Base64 400、超过大小上限 413、
+未启用入站接收或未配密钥 503、处理失败（暂时性故障）500。
+
+> 500 与 `UNKNOWN_RECIPIENT` 的区别是要害：前者 Worker 抛出异常让 Cloudflare
+> 稍后重试，后者立刻退信。若把「地址不存在」也做成 4xx，Worker 只会看到
+> 「失败了」，无法区分该退信还是该重试 —— 那就会变成一封谁也不知道下落的信。
+
+部署步骤见 [deploy/cloudflare/README.md](../deploy/cloudflare/README.md)。
 
 ---
 

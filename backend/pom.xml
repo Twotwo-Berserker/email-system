@@ -103,6 +103,27 @@
             <version>8.5.7</version>
         </dependency>
 
+        <!--
+          邮件协议支持（SMTP 发信 / IMAP 收信）
+          版本由 parent BOM 管理（2.7.18），传递依赖 com.sun.mail:jakarta.mail:1.6.7
+          —— 注意：该 artifact 的 groupId 是 jakarta，但包名是 javax.mail.*，
+             与本项目 javax.* 命名空间一致，不可替换为 Boot 3.x 版本（包名为 jakarta.mail.*）
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
+        <!--
+          BCrypt 密码哈希（仅取 BCryptPasswordEncoder）
+          刻意不引入 spring-boot-starter-security：其自动配置会注册自己的过滤器链，
+          与本项目手写的 JwtInterceptor + WebConfig 冲突
+        -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-crypto</artifactId>
+        </dependency>
+
         <!-- Spring Boot Test -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

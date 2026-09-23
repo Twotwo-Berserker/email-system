@@ -59,6 +59,11 @@ async function handleLogin() {
   loading.value = true
   try {
     await userStore.doLogin(form.email, form.password)
+    if (userStore.userInfo?.mustChangePassword) {
+      ElMessage.warning('首次登录需先修改密码')
+      router.push({ name: 'ChangePassword' })
+      return
+    }
     ElMessage.success('登录成功')
     // 跳转到之前的页面或首页
     const redirect = route.query.redirect || '/'

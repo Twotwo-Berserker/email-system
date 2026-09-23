@@ -3,12 +3,21 @@ package com.mailsystem.controller;
 import com.mailsystem.dto.*;
 import com.mailsystem.entity.Attachment;
 import com.mailsystem.entity.Mail;
+import com.mailsystem.entity.UserFeedback;
+import com.mailsystem.service.AttachmentService;
+import com.mailsystem.service.FeedbackService;
+import com.mailsystem.service.MailAnalysisService;
 import com.mailsystem.service.MailService;
+import com.mailsystem.util.MimeBuilder;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.validation.Valid;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -20,6 +29,19 @@ public class MailController {
 
     @Autowired
     private MailService mailService;
+
+    @Autowired
+    private MailAnalysisService mailAnalysisService;
+
+    @Autowired
+    private FeedbackService feedbackService;
+
+    /** 读附件内容 —— 只在原始报文重建（IMAP 代理）时用到 */
+    @Autowired
+    private AttachmentService attachmentService;
+
+    @Autowired
+    private MimeBuilder mimeBuilder;
 
     /**
      * 发送邮件
@@ -85,13 +107,129 @@ public class MailController {
     }
 
     /**
+     * 原始报文（RFC822）
+     * GET /mail/detail/{id}/raw
+     * <p>
+     * 供 IMAP 代理（{@code proxy/}）使用：IMAP 的 {@code FETCH BODY[]} 必须交出
+     * 整封报文的字节，而库内是拆开的字段 + 附件表，只有后端拼得出来（见
+     * {@code MimeBuilder}）。
+     * </p>
+     * <p>
+     * 归属校验同样借 {@code getMailDetail}。这个接口<b>不做 {@code markAsRead}</b> ——
+     * 它会被邮件客户端在同步时批量调用（列表预览、预取正文），把它当成"用户读了"
+     * 会让整箱邮件在用户还没打开时就全变已读。
+     * </p>
+     */
+    @GetMapping("/detail/{id}/raw")
+    public ResponseEntity<byte[]> raw(HttpServletRequest request, @PathVariable Long id) {
+        Long userId = (Long) request.getAttribute("userId");
+        Mail mail = mailService.getMailDetail(id, userId);
+
+        List<MimeBuilder.AttachmentPart> parts = new ArrayList<>();
+        for (Attachment att : mailService.getAttachments(id)) {
+            parts.add(new MimeBuilder.AttachmentPart(
+                    att.getFileName(), att.getContentType(), attachmentService.getAttachmentData(att.getId())));
+        }
+
+        try {
+            byte[] raw = mimeBuilder.build(mail, parts);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType("message/rfc822"))
+                    .body(raw);
+        } catch (Exception e) {
+            System.err.println("[Mail] 邮件#" + id + " 报文重建失败: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    /**
      * 获取邮件附件列表
      * GET /mail/detail/{id}/attachments
+     * <p>
+     * 先过一遍详情查询做归属校验 —— 它带授权判据（收件人或发件人）。
+     * 原先这里完全不取 userId，任何登录用户报一个邮件 ID 就能列出
+     * 别人邮件的附件清单（文件名 + 大小），再配合附件下载接口拿走内容。
+     * </p>
      */
     @GetMapping("/detail/{id}/attachments")
-    public ApiResponse<List<Attachment>> attachments(@PathVariable Long id) {
+    public ApiResponse<List<Attachment>> attachments(HttpServletRequest request, @PathVariable Long id) {
+        Long userId = getUserId(request);
+        mailService.getMailDetail(id, userId);
         List<Attachment> attachments = mailService.getAttachments(id);
         return ApiResponse.ok(attachments);
+    }
+
+    // ==================== 智能分析面板与人工反馈 ====================
+
+    /**
+     * 获取某封邮件的智能分析面板
+     * GET /mail/detail/{id}/analysis
+     * <p>
+     * 返回分类、风险、置信度、判定依据、建议动作、模型与 Prompt 版本，
+     * 以及当前用户已提交的反馈。列表页不需要这个接口 ——
+     * 那四项结论已经由查询层的 COALESCE 覆盖到 {@code Mail} 上了。
+     * </p>
+     */
+    @GetMapping("/detail/{id}/analysis")
+    public ApiResponse<MailAnalysisView> analysis(HttpServletRequest request, @PathVariable Long id) {
+        Long userId = getUserId(request);
+        // 先过一遍详情查询：它带授权判据（收件人或发件人），
+        // 用它来挡住"读别人邮件的分析结论"。viewFor 本身不做授权
+        mailService.getMailDetail(id, userId);
+        return ApiResponse.ok(mailAnalysisService.viewFor(id, userId));
+    }
+
+    /**
+     * 重新分析一封邮件（跳过"内容未变则不重跑"的检查）
+     * POST /mail/detail/{id}/reanalyze
+     * <p>
+     * 同步执行：用户点了按钮就在等结果，异步返回一个"已提交"没有意义。
+     * 单封邮件的分析最坏情况是一次 read timeout（默认 12 秒），
+     * 可以接受。
+     * </p>
+     */
+    @PostMapping("/detail/{id}/reanalyze")
+    public ApiResponse<MailAnalysisView> reanalyze(HttpServletRequest request, @PathVariable Long id) {
+        Long userId = getUserId(request);
+        try {
+            boolean analyzed = mailAnalysisService.reanalyze(id, userId);
+            MailAnalysisView view = mailAnalysisService.viewFor(id, userId);
+            return ApiResponse.ok(analyzed ? "已重新分析" : "邮件不存在或无权访问", view);
+        } catch (RuntimeException e) {
+            return ApiResponse.error(e.getMessage());
+        }
+    }
+
+    /**
+     * 提交对分析结论的反馈
+     * POST /mail/detail/{id}/feedback
+     * Body: { "feedbackType": "AGREE"|"DISAGREE", "correctedCategory": "...",
+     *         "correctedSpam": 0|1, "comment": "..." }
+     */
+    @PostMapping("/detail/{id}/feedback")
+    public ApiResponse<MailAnalysisView> submitFeedback(HttpServletRequest request,
+                                                        @PathVariable Long id,
+                                                        @Valid @RequestBody FeedbackRequest req) {
+        Long userId = getUserId(request);
+        try {
+            feedbackService.submit(id, userId, req);
+            return ApiResponse.ok("反馈已提交", mailAnalysisService.viewFor(id, userId));
+        } catch (RuntimeException e) {
+            return ApiResponse.error(e.getMessage());
+        }
+    }
+
+    /**
+     * 查询当前用户对某封邮件的反馈
+     * GET /mail/detail/{id}/feedback
+     */
+    @GetMapping("/detail/{id}/feedback")
+    public ApiResponse<UserFeedback.UserFeedbackView> myFeedback(HttpServletRequest request,
+                                                                 @PathVariable Long id) {
+        Long userId = getUserId(request);
+        mailService.getMailDetail(id, userId);
+        UserFeedback feedback = feedbackService.findMine(id, userId);
+        return ApiResponse.ok(feedback == null ? null : feedback.toView());
     }
 
     /**

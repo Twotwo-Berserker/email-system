@@ -1,0 +1,44 @@
+1. 后端开发角度
+认证/授权/JWT/Redis 黑名单 
+SMTP 发信 / IMAP 收信 / 去重 
+智能分析（LLM 调用、结构化输出、前端展示）:邮件分类、垃圾邮件识别 
+附件上传与存储 
+登录审计
+Python 规则插件 
+Redis 作为分析队列 
+自动化测试 
+管理员后台 / 角色权限 
+
+2. 全栈开发角度
+登录/注册、路由守卫、token 注入
+邮件列表/详情/筛选（已读、优先级、风险、关键词）
+侧栏文件夹、多账号切换、暗黑模式、骨架屏
+写邮件/存草稿、联系人管理、推送事件弹窗 
+AI 分析结果可视化
+账号级 LLM 配置（自带 Key、掩码回显）
+邮件列表分页
+refresh token 自动续期
+实时推送（SSE/WebSocket）
+富文本编辑器
+前端自动化测试
+管理员后台页面
+
+3. Agent开发角度
+LLM 接入
+Prompt 设计（角色/任务/Schema/枚举约束）
+结构化输出四级容错（json_object → 重试 → 剥壳 → 默认值）
+防御式解析（path + 默认值 + clamp）
+上下文控制（HTML 剥离 + 3000 字符截断 + 链接抽取）
+输出契约（spam/priority/risk + indicators + actions）
+多租户 BYO-Key（自带 baseUrl/apiKey/model + 掩码）
+Python 规则引擎代码 
+规则引擎接入 Java（native 动态库 / JNA）
+结果持久化（`mail_intelligence_result` 表）
+Redis 分析队列
+评测集 / 指标 / 回归测试
+Prompt 版本管理
+LLM 调用超时 / 熔断 / 限流
+Prompt Injection 防护
+Token 成本与延迟监控
+人工反馈回流
+工具调用 / 多步 Agent

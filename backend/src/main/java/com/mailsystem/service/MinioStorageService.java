@@ -70,6 +70,41 @@ public class MinioStorageService {
     }
 
     /**
+     * 上传字节数组到 MinIO。
+     * <p>
+     * IMAP 收到的附件在内存里就是 {@code byte[]}（来自 MIME 解析），
+     * 没有 {@link MultipartFile} 可用；为了不引入"先写临时文件再包装成
+     * MultipartFile"的绕路，直接提供字节入口。
+     * </p>
+     *
+     * @param data         文件内容
+     * @param originalName 原始文件名（仅用于保留扩展名）
+     * @param contentType  MIME 类型，可为 null（MinIO 会按二进制处理）
+     * @return MinIO 中的对象路径（bucket/objectName）
+     */
+    public String uploadBytes(byte[] data, String originalName, String contentType) throws IOException {
+        if (!enabled) {
+            throw new IOException("MinIO storage is disabled");
+        }
+        try {
+            ensureBucketExists();
+            String objectName = UUID.randomUUID().toString().replace("-", "") + extensionOf(originalName);
+            try (InputStream in = new java.io.ByteArrayInputStream(data)) {
+                minioClient.putObject(
+                        PutObjectArgs.builder()
+                                .bucket(bucketName)
+                                .object(objectName)
+                                .stream(in, data.length, -1)
+                                .contentType(contentType)
+                                .build());
+            }
+            return bucketName + "/" + objectName;
+        } catch (Exception e) {
+            throw new IOException("MinIO upload failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
      * 从 MinIO 下载文件内容
      * @param objectPath 对象路径（格式: bucket/objectName 或仅 objectName）
      * @return 文件字节数组
@@ -194,5 +229,13 @@ public class MinioStorageService {
             return objectPath.substring(objectPath.indexOf("/") + 1);
         }
         return objectPath;
+    }
+
+    /** 取文件扩展名（含点），无扩展名返回空串 */
+    private String extensionOf(String originalName) {
+        if (originalName != null && originalName.contains(".")) {
+            return originalName.substring(originalName.lastIndexOf("."));
+        }
+        return "";
     }
 }

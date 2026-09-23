@@ -68,6 +68,12 @@ public class ProtocolFilter extends OncePerRequestFilter {
     protected boolean shouldNotFilter(HttpServletRequest request) {
         // WebSocket 升级请求不经过此过滤器
         String upgrade = request.getHeader("Upgrade");
-        return !enabled || "websocket".equalsIgnoreCase(upgrade);
+        if (!enabled || "websocket".equalsIgnoreCase(upgrade)) {
+            return true;
+        }
+        // 入站投递的响应由 Cloudflare Worker 解析，包装成信封会让它读不到
+        // status 字段，进而把"地址不存在"误判成成功。这条链路是机器对机器，
+        // 自定义协议信封对它没有意义
+        return request.getRequestURI().startsWith("/inbound/");
     }
 }

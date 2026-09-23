@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.servlet.http.HttpServletRequest;
 import java.net.URLEncoder;
 
 /**
@@ -42,11 +43,15 @@ public class AttachmentController {
     /**
      * 下载附件
      * GET /attachment/download/{id}
+     * <p>
+     * 先做归属校验：只有附件所属邮件的收件人或发件人能下载。原先这里只用
+     * 附件 ID 取数据，任何登录用户枚举 ID 就能下载别人的附件。
+     * </p>
      */
     @GetMapping("/download/{id}")
-    public ResponseEntity<byte[]> download(@PathVariable Long id) {
+    public ResponseEntity<byte[]> download(HttpServletRequest request, @PathVariable Long id) {
         try {
-            Attachment attachment = attachmentService.downloadAttachment(id);
+            Attachment attachment = attachmentService.requireReadable(id, userId(request));
             byte[] data = attachmentService.getAttachmentData(id);
 
             String encodedFileName = URLEncoder.encode(attachment.getFileName(), "UTF-8")
@@ -71,11 +76,15 @@ public class AttachmentController {
     /**
      * 预览附件（内联显示）
      * GET /attachment/preview/{id}
+     * <p>
+     * 与下载同一套归属校验。预览走 {@code Content-Disposition: inline}，
+     * 漏校验比下载更危险 —— 浏览器会直接把内容渲染出来。
+     * </p>
      */
     @GetMapping("/preview/{id}")
-    public ResponseEntity<byte[]> preview(@PathVariable Long id) {
+    public ResponseEntity<byte[]> preview(HttpServletRequest request, @PathVariable Long id) {
         try {
-            Attachment attachment = attachmentService.downloadAttachment(id);
+            Attachment attachment = attachmentService.requireReadable(id, userId(request));
             byte[] data = attachmentService.getAttachmentData(id);
 
             String contentType = attachment.getContentType() != null
@@ -92,5 +101,23 @@ public class AttachmentController {
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();
         }
+    }
+
+    /**
+     * 从请求中取当前用户 ID（由 {@code JwtInterceptor} 写入）。
+     * <p>
+     * 返回 null 时 {@code requireReadable} 会拒绝 —— 能走到这里的请求都过了
+     * 拦截器，理论上取得到，但"取不到就当没登录"比"取不到就放行"安全。
+     * </p>
+     */
+    private Long userId(HttpServletRequest request) {
+        Object uid = request.getAttribute("userId");
+        if (uid instanceof Long) {
+            return (Long) uid;
+        }
+        if (uid instanceof Integer) {
+            return ((Integer) uid).longValue();
+        }
+        return uid == null ? null : Long.valueOf(uid.toString());
     }
 }

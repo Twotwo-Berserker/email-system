@@ -1,0 +1,34 @@
+# ============================================================
+# Cloudflare Email Worker 配置
+#
+# 部署与接线步骤见同目录 README.md。这里只说明"为什么长这样"。
+# ============================================================
+
+name = "mail-system-inbound"
+main = "src/index.js"
+
+# 与 Cloudflare 账号绑定的兼容性日期。Email Workers 用到的一些运行时行为
+# 会在该日期之后的新版本里变更，锁定它可避免"某天 Cloudflare 升级后行为变了"。
+# 修改前请先读 https://developers.cloudflare.com/workers/configuration/compatibility-dates/
+compatibility_date = "2025-01-01"
+
+# ------------------------------------------------------------
+# 变量
+#
+# ⚠️ 不要在 [vars] 里写 INBOUND_SHARED_SECRET。
+#    [vars] 的内容会进入部署产物，任何能看到 Worker 代码的人都读得到，
+#    而这个密钥是"谁能往用户收件箱里投信"的唯一凭据。
+#    用 `wrangler secret put INBOUND_SHARED_SECRET` 写入（加密存储）。
+# ------------------------------------------------------------
+[vars]
+# 后端入站接口地址。
+# 本地调试时指向内网穿透地址，生产环境指向你的域名。
+# 注意：路径必须以 /inbound/cloudflare 结尾（前面可以带 nginx 的 /api 前缀）
+BACKEND_INBOUND_URL = "https://make-lane-republicans-furthermore.trycloudflare.com/api/inbound/cloudflare"
+
+# ------------------------------------------------------------
+# 可观测性：保留最近若干条调用日志，出问题时能在 Cloudflare 后台回看，
+# 不用先去后端翻日志搞清"信到底有没有推到后端"
+# ------------------------------------------------------------
+[observability]
+enabled = true

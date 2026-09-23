@@ -67,14 +67,16 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { listMails, restoreMail, emptyTrash, batchPermanentDeleteMail } from '@/api/mail'
 import { formatTime } from '@/utils'
 import { useMailActions } from '@/composables/useMailActions'
+import { useMailStore } from '@/stores/mail'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Upload, Refresh } from '@element-plus/icons-vue'
 
 const { permanentDeleteWithConfirm } = useMailActions()
+const mailStore = useMailStore()
 
 const mails = ref([])
 const loading = ref(false)
@@ -84,6 +86,9 @@ const pageSize = ref(20)
 const total = ref(0)
 
 onMounted(() => refreshMails())
+
+// 垃圾箱里的邮件同样带分类/摘要，分析完成时一并刷新
+watch(() => mailStore.listVersion, refreshMails)
 
 async function refreshMails() {
   loading.value = true

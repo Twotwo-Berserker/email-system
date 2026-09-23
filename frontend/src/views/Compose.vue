@@ -16,7 +16,11 @@
         <el-input :model-value="userEmail" disabled />
       </el-form-item>
       <el-form-item label="收件人" required>
-        <el-input v-model="form.receiverIds" placeholder="输入收件人邮箱，多个用逗号分隔" />
+        <el-input v-model="form.receiverIds" placeholder="本站用户或外部邮箱，多个用逗号分隔" />
+        <div class="field-hint">
+          本站已注册的地址直接投到站内信箱；其他邮箱（QQ、163、Gmail 等）
+          会通过你在「邮箱账户」中绑定的邮箱发出，可混合填写
+        </div>
       </el-form-item>
       <el-form-item label="抄送">
         <el-input v-model="form.ccIds" placeholder="抄送人邮箱，多个用逗号分隔（选填）" />
@@ -211,7 +215,7 @@ async function handleSend() {
         attachmentIds: uploadedIds.value
       })
       await sendDraft(draftId.value)
-      ElMessage.success('草稿已发送')
+      ElMessage.success(successMessage())
     } else {
       await sendMail({
         receiverEmails: form.receiverIds,
@@ -220,7 +224,7 @@ async function handleSend() {
         body: form.body,
         attachmentIds: uploadedIds.value
       })
-      ElMessage.success('邮件发送成功')
+      ElMessage.success(successMessage())
     }
     router.push('/sent')
   } catch (e) {
@@ -228,6 +232,28 @@ async function handleSend() {
   } finally {
     sending.value = false
   }
+}
+
+/**
+ * 发送成功后的提示。
+ * <p>
+ * 收件人里只要出现 {@code @} 就可能是外部地址，而前端无法区分"本站用户的
+ * 邮箱"和"外部邮箱"（那需要查 user 表）。因此含 {@code @} 时措辞用
+ * "已提交"而不是"发送成功"——外部投递在事务提交后异步进行，这一刻还没
+ * 真正发出去。投递失败会通过 WebSocket 的 MAIL_SEND_FAILED 主动提示，
+ * 状态也会写进「已发送」。
+ * </p>
+ */
+function successMessage() {
+  return hasAtAddress()
+    ? '已提交；本站收件人已送达，外部邮箱稍后完成投递'
+    : '邮件发送成功'
+}
+
+function hasAtAddress() {
+  return `${form.receiverIds},${form.ccIds}`
+    .split(',')
+    .some(token => token.trim().includes('@'))
 }
 
 async function saveDraft() {
@@ -279,6 +305,13 @@ async function saveDraft() {
 
 .compose-form {
   background: #fff;
+}
+
+.field-hint {
+  color: #909399;
+  font-size: 12px;
+  line-height: 1.6;
+  margin-top: 4px;
 }
 
 .editor-wrapper {

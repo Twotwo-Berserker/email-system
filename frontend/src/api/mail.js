@@ -43,6 +43,44 @@ export function mailAttachments(id) {
   return request.get(`/mail/detail/${id}/attachments`)
 }
 
+// ==================== 智能分析与人工反馈 ====================
+// 列表页读的是 Mail 上的 category/isSpam/priority/summary（后端已用 COALESCE
+// 覆盖成当前用户的结论）；这里这几个接口只服务详情页的分析面板与反馈区。
+
+/**
+ * 分析面板：来源、风险、置信度、判定依据、建议动作、模型与 Prompt 版本
+ * silent —— 邮件尚未分析（或该用户没有结果）时后端返回空视图，
+ * 不该弹错误框
+ */
+export function mailAnalysis(id) {
+  return request.get(`/mail/detail/${id}/analysis`, { silent: true })
+}
+
+/**
+ * 重新分析（跳过"内容未变则不重跑"的检查）。
+ * 同步执行：单封邮件最坏情况等一次读超时（默认 12 秒）
+ */
+export function reanalyzeMail(id) {
+  return request.post(`/mail/detail/${id}/reanalyze`)
+}
+
+/**
+ * 提交反馈
+ * @param {number} id
+ * @param {{feedbackType: 'AGREE'|'DISAGREE', correctedCategory?: string,
+ *          correctedSpam?: 0|1, comment?: string}} data
+ */
+export function submitMailFeedback(id, data) {
+  return request.post(`/mail/detail/${id}/feedback`, data)
+}
+
+/**
+ * 查询当前用户对某封邮件的反馈
+ */
+export function getMailFeedback(id) {
+  return request.get(`/mail/detail/${id}/feedback`, { silent: true })
+}
+
 /**
  * 标记已读
  */

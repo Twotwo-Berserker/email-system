@@ -1,0 +1,15 @@
+{
+  "name": "mail-system-inbound-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare Email Worker：把本域邮箱收到的信转发给邮件系统后端",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^3.99.0"
+  }
+}

@@ -70,6 +70,119 @@ minio:
   # 存储桶名称（由 deploy/minio/init.sh 创建）
   bucket-name: ${MINIO_BUCKET_NAME:mail-attachments}
 
+# ------------------------------------------------------------
+# 应用级配置（新增）
+# ------------------------------------------------------------
+app:
+  # 凭据加密密钥（AES-GCM）—— 用于 mail_account 的 SMTP/IMAP 授权码
+  # 与 llm_config.api_key 的落库加密。
+  # 【生产环境替换项】必须替换为随机生成的 32 字节 Base64 密钥，且不得入库/入日志。
+  # 生成方式：openssl rand -base64 32
+  # 注意：此值一旦变更，已加密的历史凭据将无法解密，需重新录入。
+  crypto:
+    aes-key: ${AES_SECRET_KEY:}
+
+  # 管理员种子账号（仅 migration/init 脚本使用，见 deploy/mysql/migration_v3.sql）
+  admin:
+    email: ${ADMIN_INIT_EMAIL:admin@local}
+    password: ${ADMIN_INIT_PASSWORD:}
+
+  # SMTP 外发（用户绑定的邮箱账户）
+  # JavaMail 默认永不超时，连接不可达会让线程永久挂起，因此必须显式设置
+  smtp:
+    connect-timeout-ms: ${SMTP_CONNECT_TIMEOUT_MS:10000}
+    read-timeout-ms: ${SMTP_READ_TIMEOUT_MS:20000}
+
+  # 入站收信（Cloudflare Email Routing 推送）
+  # 这条链路让本系统拥有自己的域名邮箱：外部邮件到达本项目域名后，
+  # Cloudflare 在边缘接收，由 Email Worker 推送到 /inbound/cloudflare。
+  # 系统从不登录任何外部邮箱，因此<b>不需要授权码</b>。见 Cloudflare.md
+  inbound:
+    # 是否接受入站投递。默认关 —— 没做 Cloudflare 部署的实例不该对外
+    # 暴露一个匿名写接口
+    enabled: ${INBOUND_ENABLED:false}
+    # 与 Cloudflare Worker 共享的密钥，用于校验 webhook 签名（HMAC-SHA256）。
+    # 生成方式：openssl rand -hex 32
+    # 必须与 Worker 侧的 INBOUND_SHARED_SECRET 完全一致
+    shared-secret: ${INBOUND_SHARED_SECRET:}
+    # 允许接收来信的域名，逗号分隔（如 mail.example.com）。
+    # 用户只能领取这些域名下的地址；写在这里的域名必须已经在 Cloudflare
+    # 上配好 Email Routing 的 MX 记录，否则信根本到不了
+    domains: ${INBOUND_DOMAINS:}
+    # 单封信的原始报文上限（字节），默认 25MB
+    max-message-bytes: ${INBOUND_MAX_MESSAGE_BYTES:26214400}
+
+  # 发信中继（本域地址对外发信）
+  # Cloudflare Email Routing 只负责收信，不提供发信服务。
+  # 本域地址要能发信，必须有一条"以本项目域名为身份"的发信通道 —— 就是这里。
+  # 用的是项目自己的凭据，不是用户外部邮箱的授权码。
+  outbound:
+    # 通道：none（不发信）/ resend（HTTP API）/ smtp（自建或第三方 SMTP 中继）
+    transport: ${OUTBOUND_TRANSPORT:none}
+
+    resend:
+      # 【生产环境替换项】Resend 的 API Key，形如 re_xxx
+      api-key: ${RESEND_API_KEY:}
+      endpoint: ${RESEND_ENDPOINT:https://api.resend.com/emails}
+
+    smtp:
+      host: ${RELAY_SMTP_HOST:}
+      port: ${RELAY_SMTP_PORT:587}
+      # 1=SSL(465), 0=STARTTLS(587)
+      ssl: ${RELAY_SMTP_SSL:0}
+      # 允许匿名投递的中继可留空 —— 留空时不会走 AUTH 流程
+      username: ${RELAY_SMTP_USERNAME:}
+      password: ${RELAY_SMTP_PASSWORD:}
+
+  # IMAP 收信轮询
+  imap:
+    # 首次执行前的等待（毫秒）—— 让应用先完成启动与建连，
+    # 否则启动瞬间的 IMAP 失败会在日志里留下误导性的报错
+    initial-delay-ms: ${IMAP_INITIAL_DELAY_MS:30000}
+    # 轮询间隔（毫秒），默认 3 分钟。fixedDelay 语义：上一轮结束后再等这么久
+    sync-interval-ms: ${IMAP_SYNC_INTERVAL_MS:180000}
+    # 首次同步回溯天数
+    fetch-days: ${IMAP_FETCH_DAYS:7}
+    # 单次同步单账户最大拉取封数（防止首次同步拉爆）
+    max-fetch-per-run: ${IMAP_MAX_FETCH_PER_RUN:200}
+    # 登录后是否发送 IMAP ID 命令（RFC 2971）。
+    # 【请勿关闭】网易系邮箱（163/126/yeah.net）要求客户端声明身份，
+    # 不发就直接拒绝服务，且报错为难以理解的 "Unsafe Login"。
+    # 保留开关只是为了在遇到不兼容的服务端时可以临时规避。
+    send-client-id: ${IMAP_SEND_CLIENT_ID:true}
+
+  # 一键绑定时的连通性探测
+  # 探测超时显著短于正常收发：用户正对着转圈的按钮，
+  # 且最多要试 3 个端点组合，按正常超时算最坏会把人晾两分钟
+  probe:
+    connect-timeout-ms: ${PROBE_CONNECT_TIMEOUT_MS:4000}
+    read-timeout-ms: ${PROBE_READ_TIMEOUT_MS:6000}
+
+  # LLM 调用（超时与限流）
+  llm:
+    # 建连超时（毫秒）—— 无超时会导致上游挂起时线程池被占满
+    connect-timeout-ms: ${LLM_CONNECT_TIMEOUT_MS:5000}
+    # 读取超时（毫秒）
+    read-timeout-ms: ${LLM_READ_TIMEOUT_MS:12000}
+    # 每用户每分钟最大调用次数（限流）
+    rate-limit-per-minute: ${LLM_RATE_LIMIT_PER_MINUTE:20}
+    # 连续失败达到该次数后熔断，熔断期内直接走规则兜底
+    circuit-breaker-threshold: ${LLM_CIRCUIT_BREAKER_THRESHOLD:5}
+    # 熔断持续时间（秒）
+    circuit-breaker-open-seconds: ${LLM_CIRCUIT_BREAKER_OPEN_SECONDS:60}
+
+  # 邮件正文送 LLM 前的上下文裁剪
+  analysis:
+    # 正文截断长度（字符）
+    max-content-chars: ${ANALYSIS_MAX_CONTENT_CHARS:3000}
+
+# 日志级别：将分析管线与 MyBatis SQL 日志分离，
+# 否则 mybatis-plus 的 StdOutImpl 会在 fan-out 时淹没管线日志
+logging:
+  level:
+    com.mailsystem.service.analysis: ${LOG_LEVEL_ANALYSIS:INFO}
+    com.mailsystem: ${LOG_LEVEL_APP:INFO}
+
 ---
 # ============================================================
 # Docker 环境 Profile

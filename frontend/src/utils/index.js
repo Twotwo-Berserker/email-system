@@ -34,6 +34,28 @@ export function truncateSummary(text, maxLen = 100) {
   return plain.substring(0, maxLen) + '…'
 }
 
+/**
+ * 是否来自外部邮箱（IMAP 收取的来信）。
+ * <p>
+ * 后端把方向写在 {@code mail.direction} 上；{@code externalFrom} 作为兜底判据，
+ * 因为老数据里 direction 可能为 null（迁移脚本不回填历史行）。
+ * </p>
+ */
+export function isExternalMail(mail) {
+  if (!mail) return false
+  return mail.direction === 'EXTERNAL' || !!mail.externalMsgId
+}
+
+/** 外部投递状态的中文label（仅含外部收件人的邮件有值） */
+export function externalStatusLabel(status) {
+  const labels = {
+    PENDING: '投递中',
+    SENT: '已投递',
+    FAILED: '投递失败'
+  }
+  return labels[status] || ''
+}
+
 /** 获取附件图标 */
 export function getFileIcon(fileName) {
   const ext = fileName?.split('.').pop()?.toLowerCase()

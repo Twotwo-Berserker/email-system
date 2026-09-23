@@ -56,7 +56,15 @@
                 <component :is="isMailRead(mail) ? 'Message' : 'Reading'" />
               </el-icon>
             </el-button>
-            <span class="mail-sender">{{ mail.senderEmail }}</span>
+            <span class="mail-sender">
+              <el-tag
+                v-if="isExternal(mail)"
+                size="small"
+                effect="plain"
+                title="来自外部邮箱，通过你绑定的邮箱账户收取"
+                style="margin-right: 6px"
+              >外部</el-tag>{{ mail.senderEmail }}
+            </span>
           </div>
           <div class="mail-item-center">
             <span class="mail-subject">
@@ -94,14 +102,16 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { listMails, deleteMail as apiDelete, searchMails, batchDeleteMail, toggleMailRead } from '@/api/mail'
-import { formatTime, truncateSummary } from '@/utils'
+import { formatTime, truncateSummary, isExternalMail as isExternal } from '@/utils'
+import { useMailStore } from '@/stores/mail'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Message, Reading } from '@element-plus/icons-vue'
 
 const router = useRouter()
+const mailStore = useMailStore()
 const mails = ref([])
 const loading = ref(false)
 const keyword = ref('')
@@ -113,6 +123,10 @@ const total = ref(0)
 onMounted(() => {
   refreshMails()
 })
+
+// 智能分析是异步的：邮件先到、分类与摘要后到。分析完成后重新拉取，
+// 让列表项上那几秒的空白自己补上。搜索态下也刷新 —— 结果集里同样有分类要更新
+watch(() => mailStore.listVersion, refreshMails)
 
 async function refreshMails() {
   loading.value = true

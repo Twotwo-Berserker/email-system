@@ -22,6 +22,9 @@
               <el-dropdown-item @click="$router.push('/settings')">
                 <el-icon><Setting /></el-icon> 设置
               </el-dropdown-item>
+              <el-dropdown-item @click="$router.push('/change-password')">
+                <el-icon><Lock /></el-icon> 修改密码
+              </el-dropdown-item>
               <el-dropdown-item divided @click="handleLogout">
                 <el-icon><SwitchButton /></el-icon> 退出登录
               </el-dropdown-item>
@@ -56,10 +59,37 @@
             <span>垃圾箱</span>
           </el-menu-item>
           <el-divider />
+          <el-menu-item index="/mail-accounts">
+            <el-icon><Promotion /></el-icon>
+            <span>邮箱账户</span>
+          </el-menu-item>
           <el-menu-item index="/settings">
             <el-icon><Setting /></el-icon>
-            <span>插件设置</span>
+            <span>个人设置</span>
           </el-menu-item>
+
+          <!-- 管理入口：仅管理员可见。真正的权限边界在后端 AdminInterceptor，
+               这里的 v-if 只是不给普通用户展示点了会 403 的入口 -->
+          <template v-if="userStore.isAdmin">
+            <el-divider />
+            <div class="menu-group-title">管理员</div>
+            <el-menu-item index="/admin/users">
+              <el-icon><UserFilled /></el-icon>
+              <span>用户管理</span>
+            </el-menu-item>
+            <el-menu-item index="/admin/feedback">
+              <el-icon><DataAnalysis /></el-icon>
+              <span>反馈统计</span>
+            </el-menu-item>
+            <el-menu-item index="/admin/mail-accounts">
+              <el-icon><MessageBox /></el-icon>
+              <span>邮箱账户</span>
+            </el-menu-item>
+            <el-menu-item index="/admin/config">
+              <el-icon><Tools /></el-icon>
+              <span>系统配置</span>
+            </el-menu-item>
+          </template>
         </el-menu>
       </el-aside>
 
@@ -77,7 +107,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useMailStore } from '@/stores/mail'
 import { useWebSocket } from '@/composables/useWebSocket'
-import { UserFilled } from '@element-plus/icons-vue'
+import { UserFilled, DataAnalysis, MessageBox, Tools, Lock } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -93,8 +123,9 @@ onMounted(() => {
   connectWebSocket()
 })
 
-function handleLogout() {
-  userStore.logout()
+async function handleLogout() {
+  // logout 内部已 try/catch，接口失败也会清掉本地登录态
+  await userStore.logout()
   router.push('/login')
 }
 </script>
@@ -157,6 +188,13 @@ function handleLogout() {
 .sidebar-menu {
   border-right: none;
   height: 100%;
+}
+
+.menu-group-title {
+  padding: 8px 20px 4px;
+  font-size: 12px;
+  color: #909399;
+  letter-spacing: 1px;
 }
 
 .main-content {

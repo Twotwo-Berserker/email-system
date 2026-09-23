@@ -24,6 +24,17 @@
             <span class="mail-subject">{{ mail.subject }}</span>
           </div>
           <div class="mail-item-right">
+            <!-- 含外部收件人的邮件才有投递状态：外发是异步的，
+                 这是用户不点进详情也能看到结果的地方 -->
+            <el-tag
+              v-if="mail.externalStatus"
+              size="small"
+              :type="externalTagType(mail.externalStatus)"
+              effect="plain"
+            >
+              {{ mail.externalStatus === 'PENDING' ? '投递中'
+                 : mail.externalStatus === 'SENT' ? '已投递' : '投递失败' }}
+            </el-tag>
             <el-tag v-if="mail.category" size="small" type="info" effect="plain">
               {{ mail.category }}
             </el-tag>
@@ -47,17 +58,28 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { listMails } from '@/api/mail'
 import { formatTime } from '@/utils'
+import { useMailStore } from '@/stores/mail'
 
+const mailStore = useMailStore()
 const mails = ref([])
+
+function externalTagType(status) {
+  if (status === 'SENT') return 'success'
+  if (status === 'FAILED') return 'danger'
+  return 'info'
+}
 const loading = ref(false)
 const currentPage = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
 
 onMounted(() => refreshMails())
+
+// 发件箱按发件人自己的 Key 分析，结论同样是稍后才有
+watch(() => mailStore.listVersion, refreshMails)
 
 async function refreshMails() {
   loading.value = true

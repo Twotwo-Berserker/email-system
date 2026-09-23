@@ -47,6 +47,31 @@ public class FileUtil {
     }
 
     /**
+     * 保存字节数组到本地磁盘。
+     * <p>
+     * IMAP 收到的附件在内存里就是 {@code byte[]}，没有 {@link MultipartFile}。
+     * </p>
+     *
+     * @param data         文件内容
+     * @param originalName 原始文件名（仅用于保留扩展名）
+     * @return 存储后的文件路径
+     */
+    public String storeBytes(byte[] data, String originalName) throws IOException {
+        Path dir = Paths.get(uploadPath);
+        if (!Files.exists(dir)) {
+            Files.createDirectories(dir);
+        }
+        String extension = "";
+        if (originalName != null && originalName.contains(".")) {
+            extension = originalName.substring(originalName.lastIndexOf("."));
+        }
+        String storedName = UUID.randomUUID().toString().replace("-", "") + extension;
+        Path targetPath = dir.resolve(storedName);
+        Files.write(targetPath, data);
+        return targetPath.toString();
+    }
+
+    /**
      * 读取文件
      * @param filePath 文件路径
      * @return 文件字节数组
