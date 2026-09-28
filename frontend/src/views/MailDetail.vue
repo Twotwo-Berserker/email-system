@@ -312,7 +312,27 @@ const errorText = computed(() => {
     ORPHANED: '这次分析中途中断了，可点「重新分析」重试。',
     INTERNAL: '分析过程出错，本次没有结论。可点「重新分析」重试。'
   }
-  return map[analysis.value?.errorCode] || `分析未走完（${analysis.value?.errorCode}）`
+  const code = analysis.value?.errorCode || ''
+  // 上游状态码是动态的（HTTP_401 / HTTP_404 / HTTP_429…），塞不进上面那张固定表。
+  // 这几个码几乎都源于"配置填错了"而不是"模型不听话"，所以直接给出可执行的排查方向，
+  // 而不是把原始状态码丢给用户自己猜
+  const httpStatus = /^HTTP_(\d{3})$/.exec(code)
+  if (httpStatus) {
+    const status = httpStatus[1]
+    if (status === '401' || status === '403') {
+      return `上游拒绝调用（HTTP_${status}），请核对 API Key 是否属于该端点。`
+    }
+    if (status === '404') {
+      return '上游没有这个接口（HTTP_404）。通常是端点地址填得不对：'
+        + 'Anthropic 格式的网关（DeepSeek 等）要填到 /anthropic 为止，'
+        + '例如 https://api.deepseek.com/anthropic。'
+    }
+    if (status === '429') {
+      return '上游提示请求过于频繁（HTTP_429），本次使用内置规则判定。'
+    }
+    return `上游返回 HTTP_${status}，本次使用内置规则判定。`
+  }
+  return map[code] || `分析未走完（${code}）`
 })
 
 const riskTagType = computed(() => {

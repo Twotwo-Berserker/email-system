@@ -23,7 +23,10 @@
 
       <el-form-item label="API端点">
         <el-input v-model="llmForm.apiEndpoint" placeholder="https://api.openai.com/v1" />
-        <div class="field-hint">OpenAI / DeepSeek 等兼容 Chat Completions 的服务填到 /v1 为止</div>
+        <div class="field-hint">
+          Chat Completions 格式（OpenAI 等）填到 /v1 为止；Claude 格式的入口填到
+          /anthropic 为止，例如 https://api.deepseek.com/anthropic
+        </div>
       </el-form-item>
 
       <el-form-item label="API密钥">

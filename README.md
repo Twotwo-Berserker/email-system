@@ -274,7 +274,9 @@ minio:
 - ✅ **恶意链接/伪造发件人检测** — URL 分析 + 发件人校验
 - ✅ **智能摘要生成** — 规则提取 + LLM 增强，异步处理不阻塞
 - ✅ **智能分类** — 关键词自动归类（工作/个人/财务等 8 类）
-- ✅ **LLM 大模型集成** — 支持 OpenAI / DeepSeek 等兼容接口，智能摘要生成
+- ✅ **LLM 大模型集成** — 支持 OpenAI / DeepSeek 等兼容接口，智能摘要生成。
+  填端点时按协议区分：Chat Completions 格式（OpenAI 等）填到 `/v1` 为止；
+  Claude Messages 格式的入口填到 `/anthropic` 为止，如 `https://api.deepseek.com/anthropic`
 - ✅ 可插拔架构 — 统一 `PluginInterface` 接口，前端一键启用/禁用
 
 ### 通信协议

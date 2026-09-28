@@ -124,7 +124,9 @@ public class LlmClient {
             headers.setBearerAuth(apiKey);
         }
 
-        String url = buildApiUrl(endpoint, anthropic ? "/messages" : "/chat/completions");
+        String url = anthropic
+                ? buildAnthropicUrl(endpoint)
+                : buildApiUrl(endpoint, "/chat/completions");
 
         long started = System.currentTimeMillis();
         ResponseEntity<String> response;
@@ -326,9 +328,21 @@ public class LlmClient {
     /**
      * 判断是否 Anthropic Messages API。
      * <p>
-     * 与 {@code LlmPlugin} 的判据保持一致：只有主机名确实是 anthropic.com 才用
-     * Anthropic 格式。DeepSeek、通义、月之暗面等虽然协议不同，但都兼容
-     * OpenAI Chat Completions，因此不能靠"非 OpenAI 即 Anthropic"来猜。
+     * 判据有两条，分别覆盖"官方端点"和"兼容网关"两类：
+     * </p>
+     * <ul>
+     *   <li><b>主机名</b>是 {@code anthropic.com} —— 官方端点。</li>
+     *   <li><b>路径</b>里带 {@code anthropic} 段 —— 第三方网关的 Claude 协议入口。
+     *       DeepSeek 等厂商在自家域名下另开一个 Anthropic 格式的入口
+     *       （{@code https://api.deepseek.com/anthropic}），主机名与 Anthropic
+     *       毫无关系。只看主机名会把它判成 OpenAI 兼容端点，拼出
+     *       {@code /anthropic/chat/completions} 这种不存在的路径，用户拿到 404
+     *       却看不出是地址拼错了。</li>
+     * </ul>
+     * <p>
+     * 同一家厂商的 OpenAI 入口（{@code https://api.deepseek.com/v1}）路径里没有
+     * anthropic，仍然走 Chat Completions —— 这正是两类端点能共存的原因，
+     * 也是不能靠"非 OpenAI 即 Anthropic"来猜的原因。
      * </p>
      */
     public static boolean isAnthropicEndpoint(String endpoint) {
@@ -336,12 +350,43 @@ public class LlmClient {
             return false;
         }
         try {
-            String host = URI.create(endpoint).getHost();
-            return host != null && host.endsWith("anthropic.com");
+            URI uri = URI.create(endpoint.trim());
+            String host = uri.getHost();
+            if (host != null && host.toLowerCase().endsWith("anthropic.com")) {
+                return true;
+            }
+            String path = uri.getPath();
+            return path != null && path.toLowerCase().contains("anthropic");
         } catch (Exception e) {
             // URL 解析失败（例如用户填了不带 scheme 的地址）时退回关键字判断
             return endpoint.toLowerCase().contains("anthropic");
         }
+    }
+
+    /**
+     * 拼 Anthropic Messages API 的完整地址。
+     * <p>
+     * 与 OpenAI 那条分支不同，这里不能一律接一个固定后缀：Anthropic 的版本段
+     * 在路径里（{@code /v1/messages}），而用户填端点的习惯深浅不一。
+     * </p>
+     * <ul>
+     *   <li>{@code .../anthropic} —— 网关根，补全 {@code /v1/messages}</li>
+     *   <li>{@code .../anthropic/v1} 或 {@code https://api.anthropic.com/v1}
+     *       —— 已到版本段，只补 {@code /messages}。这与 OpenAI 端点填到
+     *       {@code /v1} 为止的习惯一致，用户不必为两家记两套填法</li>
+     *   <li>{@code .../v1/messages} —— 已经写全，原样使用</li>
+     * </ul>
+     */
+    static String buildAnthropicUrl(String endpoint) {
+        String url = endpoint.replaceAll("/+$", "");
+        String lower = url.toLowerCase();
+        if (lower.endsWith("/messages")) {
+            return url;
+        }
+        if (lower.endsWith("/v1")) {
+            return url + "/messages";
+        }
+        return url + "/v1/messages";
     }
 
     /**
