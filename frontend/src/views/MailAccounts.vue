@@ -104,9 +104,17 @@
           <el-button size="small" :loading="testing === account.id" @click="handleTest(account)">
             测试连接
           </el-button>
-          <el-button size="small" :loading="syncing === account.id" @click="handleSync(account)">
+          <!-- 同理，没配 IMAP 的账户（一键绑定时收信没通过验证）没有收件箱可轮询，
+               留着按钮只会让人点出一个"授权码缺失"的报错 -->
+          <el-button
+            v-if="account.imapHost"
+            size="small"
+            :loading="syncing === account.id"
+            @click="handleSync(account)"
+          >
             立即收信
           </el-button>
+          <span v-else class="no-imap-hint">该邮箱未配置收信（IMAP），只能发信</span>
         </template>
         <el-button size="small" @click="openEdit(account)">
           {{ account.cloudflareRouting ? '改显示名' : '修改' }}
@@ -953,6 +961,14 @@ onMounted(() => {
 .card-actions {
   padding-top: 12px;
   border-top: 1px solid #f0f2f5;
+}
+
+/* 没有"立即收信"按钮时顶替它的一句话，与按钮同高以免卡片高度跳动 */
+.no-imap-hint {
+  display: inline-block;
+  color: #909399;
+  font-size: 12px;
+  line-height: 24px;
 }
 
 .sub-text {

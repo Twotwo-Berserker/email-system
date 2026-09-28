@@ -220,11 +220,23 @@ public class MailAccountController {
      * 同步是阻塞的（用户点了按钮就在等结果），耗时为一次 IMAP 往返 + 解析。
      * 因此这里只同步<b>单个</b>账户，不做全量 —— 全量留给定时任务。
      * </p>
+     * <p>
+     * 没有 IMAP 服务器的账户（本域地址、只绑了发信的账户）直接返回原因，
+     * 是一次<b>成功</b>的响应：它们不是同步失败，而是不参与同步。
+     * </p>
      */
     @PostMapping("/{id}/sync")
     public ApiResponse<MailAccountView> sync(@PathVariable Long id, HttpServletRequest request) {
         try {
             MailAccount account = mailAccountService.requireOwned(currentUserId(request), id);
+
+            String unsyncable = imapReceiveService.unsyncableReason(account);
+            if (unsyncable != null) {
+                MailAccountView view = MailAccountView.from(account);
+                view.setSyncedCount(0);
+                return ApiResponse.ok(unsyncable, view);
+            }
+
             int saved = imapReceiveService.syncAccount(account);
 
             // 重新读一次以带上本次同步写入的 last_sync_* 字段

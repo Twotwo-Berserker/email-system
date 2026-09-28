@@ -2,7 +2,8 @@
   <div class="admin-mail-accounts-page">
     <h2>📮 邮箱账户</h2>
     <p class="page-desc">
-      用户绑定的外部邮箱。系统按设置的间隔轮询这些账户的收件箱，并用它们对外发信。
+      用户绑定的邮箱，分两类：<b>绑定外部邮箱</b>的账户按设置的间隔轮询收件箱，并用它们对外发信；
+      <b>本域地址</b>的来信由 Cloudflare 直接推送进来，不参与轮询，发信走本系统的发信中继。
     </p>
 
     <div class="stat-cards">
@@ -38,18 +39,31 @@
       <el-table-column prop="ownerEmail" label="所属用户" min-width="160" show-overflow-tooltip />
       <el-table-column label="绑定邮箱" min-width="200" show-overflow-tooltip>
         <template #default="{ row }">
-          <div>{{ row.emailAddress }}</div>
+          <div>
+            {{ row.emailAddress }}
+            <el-tag v-if="row.cloudflareRouting" type="success" size="small" effect="plain">
+              本域地址
+            </el-tag>
+          </div>
           <div class="sub-text">{{ row.displayName || '-' }}</div>
         </template>
       </el-table-column>
       <el-table-column label="服务器" min-width="200">
         <template #default="{ row }">
-          <div class="sub-text">
-            SMTP {{ row.smtpHost }}:{{ row.smtpPort }}{{ row.smtpSsl ? ' (SSL)' : '' }}
-          </div>
-          <div class="sub-text">
-            IMAP {{ row.imapHost }}:{{ row.imapPort }}{{ row.imapSsl ? ' (SSL)' : '' }}
-          </div>
+          <!-- 本域地址的 smtp_host / imap_host 恒为空，直接按字段渲染会得到
+               "SMTP null:null"，看上去像配漏了，其实这是它正常的样子 -->
+          <template v-if="row.cloudflareRouting">
+            <div class="sub-text">收信：Cloudflare 收到后直接推送，不登录第三方服务器</div>
+            <div class="sub-text">发信：本系统的发信中继</div>
+          </template>
+          <template v-else>
+            <div class="sub-text">
+              SMTP {{ row.smtpHost }}:{{ row.smtpPort }}{{ row.smtpSsl ? ' (SSL)' : '' }}
+            </div>
+            <div class="sub-text">
+              IMAP {{ row.imapHost }}:{{ row.imapPort }}{{ row.imapSsl ? ' (SSL)' : '' }}
+            </div>
+          </template>
         </template>
       </el-table-column>
       <el-table-column label="状态" width="100">
@@ -61,7 +75,10 @@
       </el-table-column>
       <el-table-column label="最近同步" min-width="200">
         <template #default="{ row }">
-          <div v-if="!row.lastSyncTime" class="sub-text">尚未同步</div>
+          <!-- 不参与收信的账户没有"同步"这回事。显示"尚未同步"会让人以为
+               它本该同步却一直没成功，而实际上它永远不会有这个值 -->
+          <div v-if="!canSync(row)" class="sub-text">无需同步</div>
+          <div v-else-if="!row.lastSyncTime" class="sub-text">尚未同步</div>
           <template v-else>
             <div>
               <el-tag :type="syncTagType(row.lastSyncStatus)" size="small">
@@ -77,7 +94,7 @@
       </el-table-column>
       <el-table-column label="操作" width="180" fixed="right">
         <template #default="{ row }">
-          <el-button size="small" :loading="syncing === row.id" @click="handleSync(row)">
+          <el-button v-if="canSync(row)" size="small" :loading="syncing === row.id" @click="handleSync(row)">
             立即同步
           </el-button>
           <el-button size="small" type="danger" @click="handleUnbind(row)">解绑</el-button>
@@ -102,6 +119,19 @@ const overview = ref({})
 const failedCount = computed(
   () => accounts.value.filter(a => a.lastSyncStatus && a.lastSyncStatus !== 'SUCCESS').length
 )
+
+/**
+ * 这个账户能不能"立即同步"：要有可轮询的 IMAP 收件箱才行。
+ * <p>
+ * 本域地址（来信由 Cloudflare 推送）与只绑了发信的账户都没有服务器可连，
+ * 点下去只会得到一条无中生有的"IMAP 授权码缺失"，因此干脆不给这个按钮 ——
+ * 后端同样会拒绝这类同步（见 ImapReceiveService#unsyncableReason），
+ * 两边判据一致只是为了让界面不要把人引向一个必然失败的按钮。
+ * </p>
+ */
+function canSync(row) {
+  return !row.cloudflareRouting && !!row.imapHost
+}
 
 const SYNC_LABELS = {
   SUCCESS: '成功',

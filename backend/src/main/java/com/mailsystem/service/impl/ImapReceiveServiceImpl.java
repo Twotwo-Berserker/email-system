@@ -179,7 +179,33 @@ public class ImapReceiveServiceImpl implements ImapReceiveService {
     }
 
     @Override
+    public String unsyncableReason(MailAccount account) {
+        if (account.isImapConfigured()) {
+            return null;
+        }
+        // 本域地址与"只绑了发信"的账户要分开说：前者不是配置漏了一步，
+        // 后者才是 —— 对前者说"请补 IMAP 服务器"纯属误导
+        if (account.isCloudflareRouting()) {
+            return account.getEmailAddress()
+                    + " 是本域地址，来信由 Cloudflare 收到后直接入站，无需同步";
+        }
+        return "该邮箱只配置了发信（SMTP），没有收信（IMAP）服务器，"
+                + "没有可收取的来信。如需收信，请在「修改」里补充 IMAP 服务器与授权码";
+    }
+
+    @Override
     public int syncAccount(MailAccount account) {
+        // 没有 IMAP 服务器的账户压根不参与收信：直接跳过，不碰任何同步状态。
+        // 少了这道闸，流程会一路走到下面"授权码为空"的分支，把一次正常的
+        // "无需同步"记成 AUTH_FAILED —— 界面上就多出一条红色的
+        // "IMAP 授权码缺失或解密失败，请重新填写"，而本域地址从来就没有过授权码
+        String unsyncable = unsyncableReason(account);
+        if (unsyncable != null) {
+            System.out.println("[ImapReceive] 账户#" + account.getId() + " 无需同步："
+                    + unsyncable);
+            return 0;
+        }
+
         if (!inFlightAccounts.add(account.getId())) {
             System.out.println("[ImapReceive] 账户#" + account.getId() + " 正在同步中，跳过本次");
             return 0;

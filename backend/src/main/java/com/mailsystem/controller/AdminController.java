@@ -189,11 +189,23 @@ public class AdminController {
      * <p>
      * 该接口的作用是排障：用户报"收不到信"时，管理员不必等到下一轮轮询。
      * </p>
+     * <p>
+     * 不参与收信的账户（本域地址走 Cloudflare 推送、只绑了发信的账户）
+     * 返回原因而不是记一次失败 —— 排障时最不需要的就是一条假报错。
+     * </p>
      */
     @PostMapping("/mail-accounts/{id}/sync")
     public ApiResponse<MailAccountView> syncMailAccount(@PathVariable Long id) {
         try {
             MailAccount account = mailAccountService.requireById(id);
+
+            String unsyncable = imapReceiveService.unsyncableReason(account);
+            if (unsyncable != null) {
+                MailAccountView view = MailAccountView.from(account);
+                view.setSyncedCount(0);
+                return ApiResponse.ok(unsyncable, view);
+            }
+
             int saved = imapReceiveService.syncAccount(account);
             // 重新读一次以带上本次同步写入的 last_sync_* 字段
             MailAccountView view = MailAccountView.from(mailAccountService.requireById(id));

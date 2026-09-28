@@ -136,6 +136,26 @@ public class MailAccount {
         return PROVIDER_CLOUDFLARE.equals(providerType);
     }
 
+    /**
+     * 这个账户是否参与 IMAP 收信。
+     * <p>
+     * {@code imap_host} 为空即"不存在可轮询的收件箱"，两类账户落到这里：
+     * 本域地址（来信由 Cloudflare 推送，从不登录第三方服务器）与只在
+     * quick-bind 里通过了 SMTP 的账户（{@code MailAccountServiceImpl.quickBind}
+     * 只写入真正探测通过的一侧）。对它们来说"同步"不是一个会失败的操作，
+     * 而是一件根本不存在的事。
+     * </p>
+     * <p>
+     * 与 {@link #isCloudflareRouting()} 一样集中在这里判断：轮询、
+     * 手动同步接口、界面三处都要用同一个条件，各自写一遍
+     * {@code imapHost != null} 迟早会漏掉空串那一半（库里的查询条件
+     * 本身就是 {@code IS NOT NULL AND != ''}）。
+     * </p>
+     */
+    public boolean isImapConfigured() {
+        return imapHost != null && !imapHost.trim().isEmpty();
+    }
+
     // ==================== 非数据库字段 ====================
 
     /** 归属用户的邮箱（管理端列表展示用，避免前端再查一次用户） */
