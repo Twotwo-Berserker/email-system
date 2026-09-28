@@ -1,0 +1,6 @@
+# 全栈开发岗 — 项目描述（约150字）
+
+**项目名称**：基于 Vue3 + Element Plus + SpringBoot 实现的前后端分离 AI 邮件系统
+
+**描述**：
+使用 Vue3 + Pinia + Element Plus + SpringBoot3 独立完成前后端开发与部署。前端实现三级路由守卫、Axios 拦截器 Token 注入与自动续期、WebSocket(STOMP) 新邮件实时推送（轮询降级）、富文本写信与草稿箱、多维筛选分页、暗黑模式与骨架屏，并将 AI 分析结果（垃圾/优先级/风险/摘要）标签化可视化，含账号级 LLM 配置与管理员后台；后端提供 REST API，Nginx 统一入口，多阶段 Docker 构建一键启动全套环境，输出完整 API 文档。

@@ -1,0 +1,6 @@
+# 后端开发岗 — 项目描述（约150字）
+
+**项目名称**：基于 SpringBoot3 + MySQL/Redis/MinIO 实现的分布式邮件收发后端系统
+
+**描述**：
+基于 Java 21 / SpringBoot3 / MyBatis-Plus / MySQL / Redis / MinIO 实现邮件系统后端。①JWT + 拦截器认证鉴权，Redis 维护 Token 黑名单并支持无感续期；②邮件列表与未读数缓存加速，附件采用 MinIO 优先、本地磁盘自动降级的双存储策略；③以 Spring 事务事件将外部投递与 LLM 智能分析异步解耦，收信按 Message-ID + IMAP UID 双重幂等去重；④授权码与 API Key AES 加密落库，入站回调 HMAC 验签；⑤编写单元测试，Docker Compose 一键编排全部服务完成交付。
