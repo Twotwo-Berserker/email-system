@@ -11,6 +11,18 @@
 --    两者必须同步修改，否则新装库与升级库会出现结构漂移。
 -- ============================================================
 
+-- 强制本会话按 UTF-8 发送文件里的字节。
+--
+-- 少了这一行，脚本里的中文会被写成一堆乱码（"你是" → "ä½ æ˜¯"）：mysql
+-- 客户端在 LANG/LC_ALL 为空的容器里会把 character_set_client 退回 latin1，
+-- 于是服务器按 latin1 解读这些本该是 UTF-8 的字节，再存进 utf8mb4 的列。
+-- 后果不只是难看 —— prompt_template.content 会以乱码的形式发给大模型，
+-- 分析质量随之下降，而界面上看到的只是一片乱码。
+--
+-- 同理，手工导入时请带上 --default-character-set=utf8mb4
+-- （见 README「数据库」一节）。已有的乱码数据用 repair_mojibake.sql 修复。
+SET NAMES utf8mb4;
+
 CREATE DATABASE IF NOT EXISTS mail_system
   DEFAULT CHARACTER SET utf8mb4
   DEFAULT COLLATE utf8mb4_unicode_ci;

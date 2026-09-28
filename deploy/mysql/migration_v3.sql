@@ -19,7 +19,12 @@
 --    `docker-compose down -v` 清空数据卷后由 init.sql 重建。
 --
 -- 执行方式（与 migration_v2 相同，需手工执行）：
---   docker exec -i mail-mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" < deploy/mysql/migration_v3.sql
+--   docker exec -i mail-mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" \
+--     --default-character-set=utf8mb4 < deploy/mysql/migration_v3.sql
+
+-- 客户端字符集：容器里 LANG 为空时 mysql 客户端会把字符集退回 latin1，
+-- 本文件里的中文（Prompt 种子）会因此存成乱码。详见 init.sql 开头的说明。
+SET NAMES utf8mb4;
 -- ============================================================
 
 USE mail_system;

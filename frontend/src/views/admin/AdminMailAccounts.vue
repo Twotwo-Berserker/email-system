@@ -76,8 +76,13 @@
       <el-table-column label="最近同步" min-width="200">
         <template #default="{ row }">
           <!-- 不参与收信的账户没有"同步"这回事。显示"尚未同步"会让人以为
-               它本该同步却一直没成功，而实际上它永远不会有这个值 -->
-          <div v-if="!canSync(row)" class="sub-text">无需同步</div>
+               它本该同步却一直没成功，而实际上它永远不会有这个值。
+               但"最近收信"对它们是有意义的（本域地址的来信是推送进来的），
+               有就照常显示 —— 排障时要看的正是"这个地址还在收信吗" -->
+          <div v-if="!canSync(row)" class="sub-text">
+            <div>无需同步</div>
+            <div v-if="row.lastSyncTime">最近收信 {{ formatTime(row.lastSyncTime) }}</div>
+          </div>
           <div v-else-if="!row.lastSyncTime" class="sub-text">尚未同步</div>
           <template v-else>
             <div>

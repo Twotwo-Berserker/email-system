@@ -46,16 +46,10 @@
               @change="(val) => toggleSelect(mail.id, val)"
               @click.stop
             />
-            <el-button
-              text
-              class="read-toggle-btn"
-              :title="isMailRead(mail) ? '标记为未读' : '标记为已读'"
-              @click.stop="handleToggleRead(mail)"
-            >
-              <el-icon :size="18" :color="isMailRead(mail) ? '#909399' : '#409eff'">
-                <component :is="isMailRead(mail) ? 'Message' : 'Reading'" />
-              </el-icon>
-            </el-button>
+            <!-- 这里只表示"读没读过"，不再兼任切换按钮：一个位置只做一件事。
+                 切换动作在右侧，是一个写着字的按钮 —— 原先那个只有图标、
+                 要靠悬停提示才能猜出用途的按钮，等于没有 -->
+            <span class="unread-dot" :class="{ 'is-unread': !isMailRead(mail) }" />
             <span class="mail-sender">
               <el-tag
                 v-if="isExternal(mail)"
@@ -79,6 +73,11 @@
               <el-tag size="small" type="info" effect="plain">{{ mail.category }}</el-tag>
             </span>
             <span class="mail-time">{{ formatTime(mail.sendTime) }}</span>
+            <!-- 按钮写的是"将要发生的动作"，不是当前状态：未读的邮件显示
+                 「标为已读」。读与未读都要能在列表里直接改，不必点进详情 -->
+            <el-button text size="small" @click.stop="handleToggleRead(mail)">
+              {{ isMailRead(mail) ? '标为未读' : '标为已读' }}
+            </el-button>
             <el-button text type="danger" size="small" @click.stop="handleDelete(mail)">
               <el-icon><Delete /></el-icon>
             </el-button>
@@ -108,7 +107,7 @@ import { listMails, deleteMail as apiDelete, searchMails, batchDeleteMail, toggl
 import { formatTime, truncateSummary, isExternalMail as isExternal } from '@/utils'
 import { useMailStore } from '@/stores/mail'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Message, Reading } from '@element-plus/icons-vue'
+import { Search } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const mailStore = useMailStore()
@@ -275,9 +274,18 @@ async function handleDelete(mail) {
   min-width: 200px;
 }
 
-.read-toggle-btn {
-  padding: 2px;
-  min-width: auto;
+/* 未读圆点：占位式指示器，已读时只留空位不画东西，
+   免得每行都有个灰点在喊"这里本来有个标记" */
+.unread-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.unread-dot.is-unread {
+  background: #409eff;
 }
 
 .mail-sender {

@@ -87,14 +87,17 @@ public class MailAccountView {
         v.setHasImapPassword(isPresent(a.getImapPasswordEnc()));
         v.setEnabled(a.getEnabled());
         v.setImapLastUid(a.getImapLastUid());
+        // 时间两类账户都有意义：参与同步的账户是"最近一次成功收信"，
+        // 本域地址没有可轮询的收件箱，由 listForUser / listAllForAdmin
+        // 从收到的信上算出来补进这个字段（见 MailAccountServiceImpl）
+        v.setLastSyncTime(a.getLastSyncTime());
         if (a.isImapConfigured()) {
-            v.setLastSyncTime(a.getLastSyncTime());
             v.setLastSyncStatus(a.getLastSyncStatus());
             v.setLastSyncError(a.getLastSyncError());
         }
-        // 没有 IMAP 服务器的账户（本域地址、只绑了发信的账户）不参与收信，
-        // 因此它们没有"同步状态"可言。而这类账户的 last_sync_* 只有一个来源：
-        // 早期版本把"无需同步"误当成认证失败写进去的
+        // 而没有 IMAP 服务器的账户（本域地址、只绑了发信的账户）不参与收信，
+        // 因此它们没有"同步状态"可言。偏偏这类账户的 last_sync_* 曾有一个来源：
+        // 早期版本把"无需同步"误当成认证失败写进去
         // （见 ImapReceiveService#unsyncableReason），一条早已失效却永远
         // 清不掉的报错 —— 界面上一片红字，管理端的"同步异常"也把它算进去。
         // 与其为这条脏数据做一次迁移，不如在出口处统一按"没有同步状态"呈现：

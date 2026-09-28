@@ -3,6 +3,7 @@ package com.mailsystem.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.mailsystem.dto.AccountLastReceived;
 import com.mailsystem.entity.Mail;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -257,4 +258,28 @@ public interface MailMapper extends BaseMapper<Mail> {
      */
     @Select("SELECT COUNT(*) FROM mail WHERE external_msg_id = #{messageId}")
     int countByExternalMsgId(@Param("messageId") String messageId);
+
+    /**
+     * 每个账户最近一次收到来信的时刻（只用于不参与 IMAP 同步的账户）。
+     * <p>
+     * 用 {@code send_time} 是因为 {@code mail} 表上只有这一个时间列 ——
+     * 收信时写入的是解析出的 Date 头，缺失才回落到 {@code now()}
+     * （见 {@code InboundMailServiceImpl}）。这个值由发件人书写，理论上可被伪造，
+     * 但整个系统的"邮件发生在什么时候"都以它为准（收件箱就是按它排序的），
+     * 这里跟着用是一致的；为这一个展示字段另加一列入库时间，会让系统里
+     * 同时存在两种"时间"，反而更容易用错。
+     * </p>
+     * <p>
+     * 一次查完一批账户，而不是一个账户查一次：账户数随用户增长，
+     * 逐个查询会把邮箱账户列表接口变成 N+1。
+     * </p>
+     */
+    @Select("<script>"
+            + "SELECT account_id AS accountId, MAX(send_time) AS lastReceived FROM mail "
+            + "WHERE account_id IN "
+            + "<foreach item='id' collection='accountIds' open='(' separator=',' close=')'>#{id}</foreach> "
+            + "GROUP BY account_id"
+            + "</script>")
+    List<AccountLastReceived> selectLastReceivedByAccountIds(
+            @Param("accountIds") List<Long> accountIds);
 }

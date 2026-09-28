@@ -1,7 +1,8 @@
 -- ============================================================
 -- 数据清理脚本
 -- 清空用户和邮件数据和 LLM 配置
--- 使用：docker exec -i mail-mysql mysql -uroot -p"root123" < deploy/mysql/clear_data.sql
+-- 使用：docker exec -i mail-mysql mysql -uroot -p"root123" \
+--         --default-character-set=utf8mb4 < deploy/mysql/clear_data.sql
 -- （cmd命令，root123是.env中的MYSQL_ROOT_PASSWORD）
 --
 -- 注意：本脚本会一并清空 user 表，管理员账号随之消失。
@@ -9,6 +10,8 @@
 --       ADMIN_INIT_PASSWORD 幂等重建管理员（must_change_password=1）。
 --       因此清理后需<b>重启后端容器</b>才能重新登录管理端。
 -- ============================================================
+
+SET NAMES utf8mb4;
 
 USE mail_system;
 

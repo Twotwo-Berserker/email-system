@@ -433,6 +433,21 @@ Worker 的落地步骤见 **[deploy/cloudflare/README.md](deploy/cloudflare/READ
 > **已存在的库（v1 / v2）**：需手工执行迁移脚本，按顺序
 > `migration_v2.sql` → `migration_v3.sql` → `migration_v4.sql`。
 > ⚠️ 这些脚本都使用普通 `ALTER TABLE`，**重复执行会报"列已存在"错误**，执行前请确认当前库的版本。
+>
+> 手工导入请带上 `--default-character-set=utf8mb4`：
+>
+> ```bash
+> docker exec -i mail-mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" \
+>   --default-character-set=utf8mb4 < deploy/mysql/migration_v3.sql
+> ```
+>
+> 容器里 `LANG` 为空，mysql 客户端会把字符集退回 `latin1`，脚本里的中文
+> （Prompt 模板、插件说明）会存成 `ä½ æ˜¯` 这样的乱码 —— 而且 prompt 正文乱码
+> 会被原样发给大模型，不只是看着难看。各脚本已内置 `SET NAMES utf8mb4` 兜底，
+> 显式带上参数是为了**明确**而不是依赖兜底。
+>
+> 若此前已导入出乱码，执行 `deploy/mysql/repair_mojibake.sql` 修复；
+> 该脚本带自校验条件，可重复执行。
 
 ---
 

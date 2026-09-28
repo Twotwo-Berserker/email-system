@@ -1,6 +1,7 @@
 package com.mailsystem.service.impl;
 
 import com.mailsystem.config.InboundProperties;
+import com.mailsystem.dto.AccountLastReceived;
 import com.mailsystem.dto.CloudflareBindRequest;
 import com.mailsystem.dto.InboundCapabilityView;
 import com.mailsystem.dto.MailAccountRequest;
@@ -10,6 +11,7 @@ import com.mailsystem.dto.QuickBindRequest;
 import com.mailsystem.dto.QuickBindResult;
 import com.mailsystem.entity.MailAccount;
 import com.mailsystem.mapper.MailAccountMapper;
+import com.mailsystem.mapper.MailMapper;
 import com.mailsystem.service.MailAccountService;
 import com.mailsystem.service.OutboundRelayService;
 import com.mailsystem.util.CryptoUtil;
@@ -32,6 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.mail.Store;
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -69,6 +72,10 @@ public class MailAccountServiceImpl implements MailAccountService {
     @Autowired
     private MailAccountMapper mailAccountMapper;
 
+    /** 本域地址的"最近收信"要从来信上现算，见 {@link #lastReceivedTimes} */
+    @Autowired
+    private MailMapper mailMapper;
+
     @Autowired
     private InboundProperties inbound;
 
@@ -93,14 +100,54 @@ public class MailAccountServiceImpl implements MailAccountService {
 
     @Override
     public List<MailAccountView> listForUser(Long userId, String ownerEmail) {
-        return mailAccountMapper.selectByUserId(userId).stream()
+        List<MailAccount> accounts = mailAccountMapper.selectByUserId(userId);
+        Map<Long, LocalDateTime> lastReceived = lastReceivedTimes(accounts);
+        return accounts.stream()
                 .map(a -> {
                     MailAccountView v = MailAccountView.from(a);
                     // 用户端不需要 ownerEmail（就是他自己的邮箱），保持一致地填上
                     v.setOwnerEmail(ownerEmail);
+                    fillLastReceived(v, a, lastReceived);
                     return v;
                 })
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * 给不参与 IMAP 同步的账户补上"最近收信"时间。
+     * <p>
+     * 参与同步的账户不需要这一手：每轮同步都会写 {@code last_sync_time}，
+     * 那本来就是"最近一次收到信"。本域地址没有可轮询的收件箱，这个字段
+     * 便永远是空的，卡片上那行"最近收信"于是永远显示"尚未收到邮件" ——
+     * 收得到信，界面却说没收到过。补法是从 {@code mail} 表现算。
+     * </p>
+     */
+    private void fillLastReceived(MailAccountView view, MailAccount account,
+                                  Map<Long, LocalDateTime> lastReceived) {
+        if (!account.isImapConfigured()) {
+            view.setLastSyncTime(lastReceived.get(account.getId()));
+        }
+    }
+
+    /**
+     * 查这批账户里需要现算"最近收信"的那些的时间。
+     * <p>
+     * 一次查完：账户数随用户增长，逐个账户查一次会把列表接口变成 N+1。
+     * 参与 IMAP 同步的账户不进这次查询 —— 它们的时间由同步写入，
+     * 而且查询要按 {@code account_id} 扫 {@code mail} 表，能少扫一些是一些。
+     * </p>
+     */
+    private Map<Long, LocalDateTime> lastReceivedTimes(List<MailAccount> accounts) {
+        List<Long> ids = accounts.stream()
+                .filter(account -> !account.isImapConfigured())
+                .map(MailAccount::getId)
+                .collect(Collectors.toList());
+        if (ids.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return mailMapper.selectLastReceivedByAccountIds(ids).stream()
+                .collect(Collectors.toMap(AccountLastReceived::getAccountId,
+                        AccountLastReceived::getLastReceived, (a, b) -> a));
     }
 
     @Override
@@ -681,8 +728,16 @@ public class MailAccountServiceImpl implements MailAccountService {
 
     @Override
     public List<MailAccountView> listAllForAdmin() {
-        return mailAccountMapper.selectAllWithOwner().stream()
-                .map(MailAccountView::from)
+        List<MailAccount> accounts = mailAccountMapper.selectAllWithOwner();
+        // 与用户端同一套：本域地址的"最近收信"也要算出来，
+        // 否则管理端看到的是一个永远不会变动的"无需同步"
+        Map<Long, LocalDateTime> lastReceived = lastReceivedTimes(accounts);
+        return accounts.stream()
+                .map(a -> {
+                    MailAccountView v = MailAccountView.from(a);
+                    fillLastReceived(v, a, lastReceived);
+                    return v;
+                })
                 .collect(Collectors.toList());
     }
 
