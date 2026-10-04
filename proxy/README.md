@@ -1,7 +1,6 @@
 # SMTP / IMAP 协议代理
 
-让 **Thunderbird、Outlook、手机自带邮件 App** 这类传统邮件客户端
-直接访问本系统的邮箱。
+让 **Thunderbird、Outlook、手机自带邮件 App** 这类传统邮件客户端直接访问本系统的邮箱。
 
 ---
 
@@ -122,7 +121,7 @@ python server.py --backend http://localhost:8080 --verbose
 | `backend.py` | 后端 REST 接口的封装。所有网络调用都收在这里 |
 | `mime.py` | RFC822 报文解析 —— 为 IMAP 的 `ENVELOPE` / `BODYSTRUCTURE` 提供数据 |
 
-**零第三方依赖**，只用 Python 标准库。部署者不需要 `pip install`
-任何东西 —— 一个"为了收信还得先配 Python 环境"的代理，实际会劝退大部分人。
+**零第三方依赖**，只用 Python 标准库。部署者不需要 `pip install`任何东西 ————
+一个"为了收信还得先配 Python 环境"的代理，实际会劝退大部分人。
 标准库里的 `smtpd` / `asyncore` 在 Python 3.12 已被移除，
 因此 SMTP 的状态机是自己写的（这反而更可控）。

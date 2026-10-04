@@ -1,17 +1,7 @@
 # 无需授权码的邮件收发
 
-本系统提供两条获得邮箱的途径。**「本域地址」这条路完全不涉及授权码** ——
-本文说明它是怎么做到的、代价是什么，以及各部分的部署入口。
-
-| | 绑定外部邮箱 | 领取本域地址 |
-|---|---|---|
-| 你填什么 | 邮箱地址 + **授权码** | 只填用户名 |
-| 邮箱归谁 | 你已有的 QQ / 网易 / Gmail 邮箱 | 本系统域名下的新地址（如 `alice@mail.example.com`） |
-| 谁在收信 | 本系统用 IMAP **登录**你的邮箱拉取 | Cloudflare 在域名上接收后**推送**给本系统 |
-| 谁在发信 | 用你邮箱的 SMTP 服务器 | 本系统的项目级中继 |
-| 代码里的类型 | `IMAP_SMTP` | `CLOUDFLARE` |
-
-两条路可以同时存在，互不影响。「邮箱账户」页会自动判断当前部署能用哪条。
+「领取本域地址」这条路**完全不涉及授权码**。本文说明它是怎么做到的、代价是什么，
+以及各部分的部署入口。两条途径的完整对比与操作指南见 [MailAccounts.md](MailAccounts.md)。
 
 ---
 
@@ -85,7 +75,7 @@ Worker 根据后端返回的 HTTP 状态与 `status` 字段分为三类处置，
 ### 部署
 
 完整步骤（开通 Email Routing、部署 Worker、配 Catch-all 路由、验证）见
-**[deploy/cloudflare/README.md](deploy/cloudflare/README.md)**。
+**[deploy/cloudflare/README.md](../deploy/cloudflare/README.md)**。
 
 后端侧只需要三个环境变量：`INBOUND_ENABLED`、`INBOUND_SHARED_SECRET`、`INBOUND_DOMAINS`。
 
@@ -150,7 +140,7 @@ Web 界面之外，Thunderbird、Outlook、手机邮件 App 也能直接收发�
 这也正是不涉及授权码的原因：代理不是"另一个能访问你邮箱的东西"，
 它只是 Web 界面的另一种呈现形式。
 
-用法、支持的协议命令、已知限制见 **[proxy/README.md](proxy/README.md)**。
+用法、支持的协议命令、已知限制见 **[proxy/README.md](../proxy/README.md)**。
 
 ---
 

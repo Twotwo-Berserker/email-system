@@ -4,7 +4,7 @@
 采用 Resend HTTP API 这条通道，需要准备什么、每步为什么、怎么验证。
 
 收信链路（Cloudflare Email Routing + Email Worker）见 [Cloudflare.md](Cloudflare.md) 与
-[deploy/cloudflare/README.md](deploy/cloudflare/README.md)，两者互不依赖：
+[deploy/cloudflare/README.md](../deploy/cloudflare/README.md)，两者互不依赖：
 **只配了收信时，本域地址是"能收不能发"的**，这是一个合法状态，界面会明确标注。
 
 ---
@@ -34,13 +34,13 @@ MailAccount.emailAddress（用户领取/绑定的地址）
   → OutboundRelayServiceImpl.sendViaResend()  payload["from"]
 ```
 
-参考 [MailSendServiceImpl.java:139-160](backend/src/main/java/com/mailsystem/service/impl/MailSendServiceImpl.java#L139-L160)、
-[OutboundMessage.java:57-67](backend/src/main/java/com/mailsystem/dto/OutboundMessage.java#L57-L67)。
+参考 [MailSendServiceImpl.java:139-160](../backend/src/main/java/com/mailsystem/service/impl/MailSendServiceImpl.java#L139-L160)、
+[OutboundMessage.java:57-67](../backend/src/main/java/com/mailsystem/dto/OutboundMessage.java#L57-L67)。
 
 由此得到两条硬结论：
 
 1. **必须在 Resend 验证的域名 = `INBOUND_DOMAINS` 里的每一个域名。**
-   用户领的地址只能落在这些域名下（[InboundProperties.java](backend/src/main/java/com/mailsystem/config/InboundProperties.java) 的 `isLocalDomain()`），
+   用户领的地址只能落在这些域名下（[InboundProperties.java](../backend/src/main/java/com/mailsystem/config/InboundProperties.java) 的 `isLocalDomain()`），
    所以 `INBOUND_DOMAINS=a.com,b.com` 就要求 a.com 和 b.com 都在 Resend 里验证通过。
    当前 `.env` 里是 `INBOUND_DOMAINS=twotwomail.dpdns.org` —— **要验证的就是这个域名**。
 2. **`From` 不可能做成"随便填一个 Resend 账号"**。代码写死为账户自己的地址，
@@ -100,7 +100,7 @@ MailAccount.emailAddress（用户领取/绑定的地址）
   而不是"在面板里存着"。
 - **验证通过之前不要往下走**。此时用这个域名发信，收件方会拒收或直接丢垃圾箱，
   而项目里看到的失败原因会是 Resend 返回的原文（如 `domain is not verified`）——
-  [OutboundRelayServiceImpl.java:174-179](backend/src/main/java/com/mailsystem/service/impl/OutboundRelayServiceImpl.java#L174-L179)
+  [OutboundRelayServiceImpl.java:174-179](../backend/src/main/java/com/mailsystem/service/impl/OutboundRelayServiceImpl.java#L174-L179)
   会把这段原文带出来，不会只给一个 HTTP 状态码。
 
 > 关于 `dpdns.org` 这类免费子域：如果验证长时间不过，先看 Resend 报错原文再判断，
@@ -116,7 +116,7 @@ MailAccount.emailAddress（用户领取/绑定的地址）
    限制到 `twotwomail.dpdns.org` 这一个域名。
 3. 复制 `re_` 开头的 Key。**它只显示一次。**
 
-> Key 落在 `.env` 里，而 `.env` 已被 `.gitignore` 忽略（见 [.gitignore:7](.gitignore#L7)），
+> Key 落在 `.env` 里，而 `.env` 已被 `.gitignore` 忽略（见 [.gitignore:7](../.gitignore#L7)），
 > 不会进版本库。这是它相对 `wrangler.toml` 的 `[vars]` 的差别 —— 但 `.env` 在磁盘上是明文的，
 > 生产机上要注意文件权限。
 
@@ -137,8 +137,8 @@ RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxx
 # RESEND_ENDPOINT=https://api.resend.com/emails
 ```
 
-配置项的解析链是 `.env` → [docker-compose.yml:139-140](docker-compose.yml#L139-L140) → 容器环境变量 →
-[application.yml](backend/src/main/resources/application.yml) 的 `app.outbound.*` →
+配置项的解析链是 `.env` → [docker-compose.yml:139-140](../docker-compose.yml#L139-L140) → 容器环境变量 →
+[application.yml](../backend/src/main/resources/application.yml) 的 `app.outbound.*` →
 `OutboundRelayServiceImpl` 的 `@Value` 注入。
 
 **三处要同时成立**，只改一处不生效：
@@ -154,14 +154,14 @@ docker compose up -d backend
 docker compose logs -f backend | head -50
 ```
 
-就绪判据（[OutboundRelayServiceImpl.java:102-111](backend/src/main/java/com/mailsystem/service/impl/OutboundRelayServiceImpl.java#L102-L111)）：
+就绪判据（[OutboundRelayServiceImpl.java:102-111](../backend/src/main/java/com/mailsystem/service/impl/OutboundRelayServiceImpl.java#L102-L111)）：
 
 ```
 isAvailable() == (transport == "resend" && RESEND_API_KEY 非空)
 ```
 
 任一不满足，本域地址发信时会在**写库之前**被拦住并报"本实例未配置发信中继"，
-而不是先落库、几十秒后再异步失败 —— 见 [MailServiceImpl.java:675-693](backend/src/main/java/com/mailsystem/service/impl/MailServiceImpl.java#L675-L693)。
+而不是先落库、几十秒后再异步失败 —— 见 [MailServiceImpl.java:675-693](../backend/src/main/java/com/mailsystem/service/impl/MailServiceImpl.java#L675-L693)。
 所以"页面上根本没出现发送失败、但信也没出去"的情况在这个环节不会发生：连"发送"都点不下去。
 
 ---
@@ -193,7 +193,7 @@ curl -X POST https://api.resend.com/emails \
 ### 5.2 验证本项目的配置已读到
 
 `GET /mail-account/capabilities`（前端「邮箱账户」页会调它，见
-[MailAccountController.java:129](backend/src/main/java/com/mailsystem/controller/MailAccountController.java#L129)）：
+[MailAccountController.java:129](../backend/src/main/java/com/mailsystem/controller/MailAccountController.java#L129)）：
 
 ```bash
 curl -H "Authorization: Bearer <用户JWT>" http://localhost:8080/mail-account/capabilities
@@ -218,7 +218,7 @@ curl -H "Authorization: Bearer <用户JWT>" http://localhost:8080/mail-account/c
 
 1. 「邮箱账户」页确认已经有本域地址（没有就领一个 `用户名@twotwomail.dpdns.org`）。
    若同时绑定了 QQ 邮箱账户，注意**本域地址要成为默认发信账户**，否则会用 QQ 那条通道发出去
-   （见 [MailSendServiceImpl.java:109-122](backend/src/main/java/com/mailsystem/service/impl/MailSendServiceImpl.java#L109-L122) 的选账户逻辑）。
+   （见 [MailSendServiceImpl.java:109-122](../backend/src/main/java/com/mailsystem/service/impl/MailSendServiceImpl.java#L109-L122) 的选账户逻辑）。
 2. 写信，收件人填 `xxx@qq.com`，发送。
 3. 看三处：
    - 界面「已发送」的投递状态（`mail.external_status` = `SENT` / `FAILED`，失败原因在
@@ -226,7 +226,7 @@ curl -H "Authorization: Bearer <用户JWT>" http://localhost:8080/mail-account/c
    - 后端日志里的 `[MailSend] 邮件#N 已通过 ... 投递给 ...` 或 `[MailSend] ... 外发失败`；
    - Resend 后台的 **Emails/Logs**，能看到同一封信的投递结果与事件。
 
-投递是异步的：`AFTER_COMMIT` + `@Async`（[MailDeliveryListener.java:42-44](backend/src/main/java/com/mailsystem/event/MailDeliveryListener.java#L42-L44)），
+投递是异步的：`AFTER_COMMIT` + `@Async`（[MailDeliveryListener.java:42-44](../backend/src/main/java/com/mailsystem/event/MailDeliveryListener.java#L42-L44)），
 所以点完"发送"界面会先提示成功（站内投递确实成功了），外部结果稍后才由状态与
 WebSocket 通知体现 —— 失败时一定会弹窗，不需要自己去翻「已发送」。
 
@@ -240,7 +240,7 @@ WebSocket 通知体现 —— 失败时一定会弹窗，不需要自己去翻�
 ## 6. 失败原因对照表
 
 代码在收到非 200 时会去响应体里取 `message` 或 `error` 字段，取不到就原样返回
-（[OutboundRelayServiceImpl.java:187-206](backend/src/main/java/com/mailsystem/service/impl/OutboundRelayServiceImpl.java#L187-L206)），
+（[OutboundRelayServiceImpl.java:187-206](../backend/src/main/java/com/mailsystem/service/impl/OutboundRelayServiceImpl.java#L187-L206)），
 所以**「已发送」里的失败原因基本就是 Resend 的原话**，照下表处理：
 
 | 失败原因（原文） | 原因 | 处置 |
@@ -269,10 +269,10 @@ WebSocket 通知体现 —— 失败时一定会弹窗，不需要自己去翻�
 | 已验证域名数 | 免费版 1~3 个（不同来源说法不一，以 Resend 后台实际提示为准） | `INBOUND_DOMAINS` 里的域名数量别超过这个数，否则会有域名永远验证不上 |
 | 单封大小 | **编码后** 40MB | 附件走 base64 会膨胀约 33%；本项目上传上限是 50MB（`FILE_UPLOAD_MAX_SIZE`），**可能存在"能上传、发不出去"的组合**，注意这个错位 |
 | 无重试 | 本项目代码不重试 | 429 / 5xx / 超时都会直接记为 `FAILED`，需要人工重发。这也是"发送前先拦住"设计存在的原因 |
-| 正文格式 | 代码用 `text` 而非 `html` 字段 | 库里的正文在收信时已转成纯文本（[OutboundRelayServiceImpl.java:151-153](backend/src/main/java/com/mailsystem/service/impl/OutboundRelayServiceImpl.java#L151-L153)），发出的信是纯文本，不是富文本 |
+| 正文格式 | 代码用 `text` 而非 `html` 字段 | 库里的正文在收信时已转成纯文本（[OutboundRelayServiceImpl.java:151-153](../backend/src/main/java/com/mailsystem/service/impl/OutboundRelayServiceImpl.java#L151-L153)），发出的信是纯文本，不是富文本 |
 
 超时说明：HTTP 超时**复用** `app.smtp.connect-timeout-ms` / `read-timeout-ms`
-（[OutboundRelayServiceImpl.java:85-89](backend/src/main/java/com/mailsystem/service/impl/OutboundRelayServiceImpl.java#L85-L89)），
+（[OutboundRelayServiceImpl.java:85-89](../backend/src/main/java/com/mailsystem/service/impl/OutboundRelayServiceImpl.java#L85-L89)），
 默认 10s / 20s。这是"外发一次网络往返"的预算，与通道无关 ——
 改它会同时影响账户 SMTP 与中继，调之前想清楚。
 
@@ -334,24 +334,6 @@ RELAY_SMTP_PASSWORD=
 - 用户名留空 = 不走 AUTH，适用于允许匿名投递的内网中继。
 - 很多云主机会封禁出站 25/465/587 —— 这正是本项目优先推荐 Resend（走 443）的原因。
   要用 SMTP 通道，先确认主机商没封端口。
-
----
-
-## 11. 别照抄上游文档
-
-网上（以及仓库里那份 [发邮件相关.md](发邮件相关.md)）流传的
-`dreamhunter2333/cloudflare_temp_email` 配置说明**不适用于本项目**，例如：
-
-| 上游有 | 本项目 |
-|---|---|
-| Cloudflare `send_email` binding 直发 | 没有。`deploy/cloudflare/` 只有入站 Worker，`wrangler.toml` 里没有该 binding |
-| `verifiedAddressList` 兼容模式、4 层发信优先级 | 没有。只有"账户 SMTP"与"项目级中继"两条通道 |
-| `RESEND_TOKEN` / `RESEND_TOKEN_<DOMAIN>` | 只有单一 `RESEND_API_KEY`，多域名靠同一个 Key |
-| 多域名各自一个 Key | 一处 Key 覆盖所有 `INBOUND_DOMAINS` |
-
-变量名、优先级规则都对不上，照抄会得到"配了却没生效"的结果。
-以本仓库代码为准：[OutboundRelayServiceImpl.java](backend/src/main/java/com/mailsystem/service/impl/OutboundRelayServiceImpl.java)。
-
 ---
 
 ## 参考资料

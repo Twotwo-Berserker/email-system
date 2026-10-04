@@ -1,9 +1,9 @@
-# 邮件系统 API 接口文档
+# 智邮 CloudMail — REST API 文档
 
-> 2026 软件开发综合实训 — 邮件系统  
-> Base URL: `http://localhost:8080`  
-> Content-Type: `application/json` (除文件上传外)  
-> 认证方式: `Authorization: Bearer <token>`
+> Base URL: `http://localhost:8080`（经 Nginx 访问时为 `http://localhost/api`，转发时去掉 `/api` 前缀）  
+> Content-Type: `application/json`（文件上传除外）  
+> 认证方式: `Authorization: Bearer <token>`  
+> 管理员接口统一挂在 `/admin/**` 下，由后端 `AdminInterceptor` 强制校验角色，前端路由守卫不构成安全边界。
 
 ---
 
@@ -566,7 +566,7 @@ POST /mail-account/inbound
 | displayName | String | 否 | 显示名 |
 
 **没有授权码字段。** 这条路径不登录任何外部邮箱，因此不存在授权码 —— 详见
-[Cloudflare.md](../Cloudflare.md)。
+[Cloudflare.md](Cloudflare.md)。
 
 用户名只允许小写字母、数字与 `. _ + -`，不能以符号开头或结尾。
 地址已被占用时返回明确报错。

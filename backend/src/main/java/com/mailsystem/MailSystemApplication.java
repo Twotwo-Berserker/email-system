@@ -5,10 +5,10 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
- * 邮件系统 SpringBoot 启动类
+ * 智邮 CloudMail 后端服务入口
  *
- * 2026 软件开发综合实训 - 邮件系统
- * 后端服务入口
+ * 基于 Spring Boot 的全栈邮件系统：站内收发、外部邮箱接入、
+ * SMTP/IMAP 协议代理与 LLM 智能分析。
  */
 @SpringBootApplication
 @MapperScan("com.mailsystem.mapper")

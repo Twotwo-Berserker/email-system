@@ -3,7 +3,7 @@
 把"发往本项目域名的邮件"接到本系统里来。做完这一步，用户就能领一个
 `xxx@你的域名` 的地址收信，**全程不需要任何授权码**。
 
-原理与整体设计见仓库根目录的 [Cloudflare.md](../../Cloudflare.md)；
+原理与整体设计见 [doc/Cloudflare.md](../../doc/Cloudflare.md)；
 这里只讲怎么落地。
 
 ---
@@ -163,8 +163,8 @@ docker-compose logs -f backend | grep Inbound
 **③ 发一封信**
 
 本域地址的收信已经通了，但**发信还需另外配置发信中继**（Cloudflare
-Email Routing 只负责收，不提供发信服务）。见根目录
-[Cloudflare.md](../../Cloudflare.md) 的「二、发信：项目级中继」一节。
+Email Routing 只负责收，不提供发信服务）。见
+[doc/Cloudflare.md](../../doc/Cloudflare.md) 的「二、发信：项目级中继」一节。
 
 ---
 
