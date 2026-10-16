@@ -232,8 +232,7 @@ GET /mail/detail/{id}/raw
 正文与附件都在其中。供 SMTP/IMAP 协议代理使用 —— 邮件客户端抓信时需要整封报文。
 
 > 与 `/mail/detail/{id}` 的区别：详情接口会**自动标记已读**，这个不会。
-> 客户端同步时会批量抓取报文，若在这里标记已读，整个邮箱会在用户打开任何一封
-> 邮件之前就变成已读。
+> 客户端同步时会批量抓取报文，若在这里标记已读，整个邮箱会在用户打开任何一封邮件之前就变成已读。
 
 ---
 
@@ -565,8 +564,7 @@ POST /mail-account/inbound
 | address | String | 是 | 完整地址（`alice@mail.example.com`）或只填用户名（`alice`，服务端补默认域名） |
 | displayName | String | 否 | 显示名 |
 
-**没有授权码字段。** 这条路径不登录任何外部邮箱，因此不存在授权码 —— 详见
-[Cloudflare.md](Cloudflare.md)。
+**没有授权码字段。** 这条路径不登录任何外部邮箱，因此不存在授权码 —— 详见 [Cloudflare.md](Cloudflare.md)。
 
 用户名只允许小写字母、数字与 `. _ + -`，不能以符号开头或结尾。
 地址已被占用时返回明确报错。
@@ -595,8 +593,8 @@ POST   /mail-account/{id}/sync      # 阻塞到本轮结束，响应里带 synce
 DELETE /mail-account/{id}           # 解绑
 ```
 
-> 这三个接口只对 `cloudflareRouting = false` 的账户有意义 —— 本域地址没有服务器
-> 可测，收信也不是轮询而是被推送，前端会隐藏这些按钮。
+> 这三个接口只对 `cloudflareRouting = false` 的账户有意义 —— 本域地址没有服务器可测，
+> 收信也不是轮询而是被推送，前端会隐藏这些按钮。
 
 ---
 
