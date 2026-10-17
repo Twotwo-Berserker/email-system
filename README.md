@@ -145,6 +145,10 @@ docker compose ps           # 3. 查看状态
 - 修改前端后需重新构建：`docker compose up -d --build frontend`。
 - 完全重置：`docker compose down -v`（删除数据卷）。
 
+若使用**CloudFlare**转发与外部邮箱通信，需要启动CloudFlare隧道
+并更新`deploy\cloudflare\wrangler.toml`中的`BACKEND_INBOUND_URL`，
+详见`deploy\cloudflare\README.md`
+
 ### 访问地址
 
 | 服务 | 地址 | 说明 |

@@ -80,6 +80,11 @@ services:
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     environment:
+      # 时区必须显式指定。amazoncorretto:21-alpine 的默认时区是 GMT，
+      # 而 MySQL（+08:00）、Jackson（Asia/Shanghai）和前端都按东八区处理：
+      # 一旦 JVM 用 GMT，LocalDateTime.now() 和 Date→LocalDateTime 的转换
+      # 都会写入 UTC 墙钟时间，界面上所有邮件时间会早 8 小时。
+      - TZ=Asia/Shanghai
       # Spring 激活的 profile（docker = 使用 Docker 环境配置）
       - SPRING_PROFILES_ACTIVE=docker
       # MySQL 连接信息
@@ -307,6 +312,10 @@ services:
       - "${IMAP_PORT:-143}:143"
       - "${SMTP_PORT:-2525}:2525"
     environment:
+      # 与 backend 保持一致：proxy 把后端返回的不带时区标记的时间串
+      # （形如 2026-10-17 14:00:00）按本机时区解释。容器默认 UTC 会让
+      # IMAP 客户端看到的邮件时间再偏 8 小时
+      - TZ=Asia/Shanghai
       # 走容器网络里的服务名，不是 localhost —— proxy 是独立容器
       - BACKEND_URL=http://backend:8080
       - PROXY_HOST=${PROXY_HOST:-0.0.0.0}

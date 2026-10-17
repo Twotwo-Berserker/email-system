@@ -24,7 +24,7 @@ compatibility_date = "2025-01-01"
 # 后端入站接口地址。
 # 本地调试时指向内网穿透地址，生产环境指向你的域名。
 # 注意：路径必须以 /inbound/cloudflare 结尾（前面可以带 nginx 的 /api 前缀）
-BACKEND_INBOUND_URL = "https://make-lane-republicans-furthermore.trycloudflare.com/api/inbound/cloudflare"
+BACKEND_INBOUND_URL = "?/api/inbound/cloudflare"
 
 # ------------------------------------------------------------
 # 可观测性：保留最近若干条调用日志，出问题时能在 Cloudflare 后台回看，
